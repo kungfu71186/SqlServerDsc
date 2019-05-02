@@ -11,16 +11,7 @@ $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
 <#
     .SYNOPSIS
-        Gets the SQL Reporting Services initialization status.
-
-    .PARAMETER InstanceName
-        Name of the SQL Server Reporting Services instance to be configured.
-
-    .PARAMETER DatabaseServerName
-        Name of the SQL Server to host the Reporting Service database.
-
-    .PARAMETER DatabaseInstanceName
-        Name of the SQL Server instance to host the Reporting Service database.
+        Gets the SQL Reporting Services configuration.
 #>
 function Get-TargetResource
 {
@@ -28,98 +19,90 @@ function Get-TargetResource
     [OutputType([System.Collections.Hashtable])]
     param
     (
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $InstanceName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseServerName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseInstanceName
     )
 
-    $reportingServicesData = Get-ReportingServicesData -InstanceName $InstanceName
+    $reportingServicesCIMObjects = Get-ReportingServicesCIM
 
-    if ( $null -ne $reportingServicesData.Configuration )
+    $instanceCIMObject      = $reportingServicesCIMObjects.InstanceCIM
+    $configurationCIMObject = $reportingServicesCIMObjects.ConfigurationCIM
+
+    $databaseLogonTypes = @('Windows Login', 'SQL Server Account', 'Current User - Integrated Security')
+    $smtpAuthenticationTypes = @('No Authentication', 'Username and password (Basic)', 'Report service service account (NTLM)')
+
+    #region Get list of servers in cluster
+    $scaleOutServersParameters = @{
+        CimInstance = $configurationCIMObject
+        MethodName = 'ListReportServersInDatabase'
+    }
+    $scaleOutServers = $(Invoke-RsCimMethod @scaleOutServersParameters).MachineNames
+    #endregion Get list of servers in cluster
+
+    #region Get and separate Report Server URLs
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $instanceCIMObject
+        MethodName = 'GetReportServerUrls'
+    }
+
+    $reportServerUrls = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+    # Because GetReportServerUrls returns all urls for all web services, we need to match up
+    # which urls belong to ReportServerWebService and ReportServerWebApp
+    $reportServeUrlList = @{}
+
+    for ( $i = 0; $i -lt $reportServerUrls.ApplicationName.Count; ++$i )
     {
-        if ( $reportingServicesData.Configuration.DatabaseServerName.Contains('\') )
-        {
-            $DatabaseServerName = $reportingServicesData.Configuration.DatabaseServerName.Split('\')[0]
-            $DatabaseInstanceName = $reportingServicesData.Configuration.DatabaseServerName.Split('\')[1]
-        }
-        else
-        {
-            $DatabaseServerName = $reportingServicesData.Configuration.DatabaseServerName
-            $DatabaseInstanceName = 'MSSQLSERVER'
-        }
-
-        $isInitialized = $reportingServicesData.Configuration.IsInitialized
-
-        if ( $isInitialized )
-        {
-            if ( $reportingServicesData.Configuration.SecureConnectionLevel )
-            {
-                $isUsingSsl = $true
-            }
-            else
-            {
-                $isUsingSsl = $false
-            }
-
-            $reportServerVirtualDirectory = $reportingServicesData.Configuration.VirtualDirectoryReportServer
-            $reportsVirtualDirectory = $reportingServicesData.Configuration.VirtualDirectoryReportManager
-
-            $invokeRsCimMethodParameters = @{
-                CimInstance = $reportingServicesData.Configuration
-                MethodName = 'ListReservedUrls'
-            }
-
-            $reservedUrls = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-            $reportServerReservedUrl = @()
-            $reportsReservedUrl = @()
-
-            for ( $i = 0; $i -lt $reservedUrls.Application.Count; ++$i )
-            {
-                if ( $reservedUrls.Application[$i] -eq 'ReportServerWebService' )
-                {
-                    $reportServerReservedUrl += $reservedUrls.UrlString[$i]
-                }
-
-                if ( $reservedUrls.Application[$i] -eq $reportingServicesData.ReportsApplicationName )
-                {
-                    $reportsReservedUrl += $reservedUrls.UrlString[$i]
-                }
-            }
-        }
-        else
-        {
-            <#
-                Make sure the value returned is false, if the value returned was
-                either empty, $null or $false. Fic for issue #822.
-            #>
-            [System.Boolean] $isInitialized = $false
-        }
+        $application = ($reportServerUrls.ApplicationName)[$i]
+        $associatedUrl = ($reportServerUrls.URLS)[$i]
+        $reportServeUrlList[$application] += @($associatedUrl)
     }
-    else
-    {
-        throw New-TerminatingError -ErrorType SSRSNotFound -FormatArgs @($InstanceName) -ErrorCategory ObjectNotFound
+    #endregion Get and separate Report Server URLs
+
+    $getTargetResourceResult = @{
+        InstanceName           = $instanceCIMObject.InstanceName
+        Version                = $instanceCIMObject.Version
+        EditionName            = $instanceCIMObject.EditionName
+        InstallationID         = $configurationCIMObject.InstallationID
+        IsInitialized          = $configurationCIMObject.IsInitialized
+        ReportServerConfigPath = $configurationCIMObject.PathName
+
+        # Service Account
+        ServiceAccountActual = $configurationCIMObject.WindowsServiceIdentityActual
+        ServiceAccount       = $configurationCIMObject.WindowsServiceIdentityConfigured
+
+        # Web Service URL
+        ReportServerVirtualDirectory = $configurationCIMObject.VirtualDirectoryReportServer # This is the Web Service URL
+        ReportServerReservedUrl      = $reportServeUrlList.ReportServerWebService
+
+        # Database
+        DatabaseServerName   = $configurationCIMObject.DatabaseServerName
+        DatabaseInstanceName = $configurationCIMObject.DatabaseName
+        DatabaseLogonAccount = $configurationCIMObject.DatabaseLogonAccount
+        DatabaseLogonType    = $databaseLogonTypes[$configurationCIMObject.DatabaseLogonType]
+
+        # Web Portal URL
+        ReportsVirtualDirectory = $configurationCIMObject.VirtualDirectoryReportManager # This the Web Portal (Front-end for users)
+        ReportsReservedUrl      = $reportServeUrlList.ReportServerWebApp
+
+        # Email Settings
+        EmailSender         = $configurationCIMObject.SenderEmailAddress
+        EmailSMTP           = $configurationCIMObject.SMTPServer
+        EmailSMTPSSL        = $configurationCIMObject.SMTPUseSSL
+        EmailAuthentication = $smtpAuthenticationTypes[$configurationCIMObject.SMTPAuthenticate]
+        EmailSMTPUser       = $configurationCIMObject.SendUserName
+
+        # Execution Account
+        ExecutionAccount = $configurationCIMObject.UnattendedExecutionAccount # Service account unattended execution
+
+        # Encryption Keys - Nothing to get from here
+
+        # Subscription Settings
+        FileShareAccount = $configurationCIMObject.FileShareAccount # Service account used for file shares
+
+        # Scale-out Deployment
+        ScaleOutServers  = $scaleOutServers
     }
 
-    return @{
-        InstanceName                 = $InstanceName
-        DatabaseServerName           = $DatabaseServerName
-        DatabaseInstanceName         = $DatabaseInstanceName
-        ReportServerVirtualDirectory = $reportServerVirtualDirectory
-        ReportsVirtualDirectory      = $reportsVirtualDirectory
-        ReportServerReservedUrl      = $reportServerReservedUrl
-        ReportsReservedUrl           = $reportsReservedUrl
-        UseSsl                       = $isUsingSsl
-        IsInitialized                = $isInitialized
-    }
+    return $getTargetResourceResult
 }
 
 <#
@@ -847,6 +830,11 @@ function Test-TargetResource
     $result
 }
 
+function Compare-TargetResourceState
+{
+
+}
+
 <#
     .SYNOPSIS
         Returns SQL Reporting Services data: configuration object used to initialize and configure
@@ -854,46 +842,46 @@ function Test-TargetResource
 
     .PARAMETER InstanceName
         Name of the SQL Server Reporting Services instance for which the data is being retrieved.
+
+    .NOTES
+        We can use WMI to get and set all values for Reporting services instead of relying on the registry
+        There are 2 classes that we can use to get most of the information we need. The only thing we cannot
+        retrieve is the Product Key, which i believe is in the checksum within the registry and it's encrypted.
+
+        WMI Classes:
+            Namespace: root\Microsoft\SqlServer\ReportServer\<InstanceName>\v<Version>, Class: MSReportServer_Instance
+            Namespace: root\Microsoft\SqlServer\ReportServer\<InstanceName>\v<Version>\Admin, Class: MSReportServer_ConfigurationSetting
 #>
-function Get-ReportingServicesData
+function Get-ReportingServicesCIM
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
     param
     (
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $InstanceName
     )
+    #TODO: Need a try/get here to verify that RS is actually installed.
 
-    $instanceNamesRegistryKey = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\RS'
+    $rootReportServerNameSpace = 'ROOT\Microsoft\SqlServer\ReportServer'
+    $instanceName = (Get-CimInstance -Namespace $rootReportServerNameSpace -Class __NameSpace).Name
 
-    if ( Get-ItemProperty -Path $instanceNamesRegistryKey -Name $InstanceName -ErrorAction SilentlyContinue )
-    {
-        $instanceId = (Get-ItemProperty -Path $instanceNamesRegistryKey -Name $InstanceName).$InstanceName
-        $sqlVersion = [System.Int32]((Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$instanceId\Setup" -Name 'Version').Version).Split('.')[0]
-        $reportingServicesConfiguration = Get-CimInstance -ClassName MSReportServer_ConfigurationSetting -Namespace "root\Microsoft\SQLServer\ReportServer\RS_$InstanceName\v$sqlVersion\Admin"
-        $reportingServicesConfiguration = $reportingServicesConfiguration | Where-Object -FilterScript {
-            $_.InstanceName -eq $InstanceName
-        }
-        <#
-            SQL Server Reporting Services Web Portal application name changed
-            in SQL Server 2016.
-            https://docs.microsoft.com/en-us/sql/reporting-services/breaking-changes-in-sql-server-reporting-services-in-sql-server-2016
-        #>
-        if ( $sqlVersion -ge 13 )
-        {
-            $reportsApplicationName = 'ReportServerWebApp'
-        }
-        else
-        {
-            $reportsApplicationName = 'ReportManager'
-        }
+    $rootReportServerInstanceNameSpace = '{0}\{1}' -f $rootReportServerNameSpace, $instanceName
+    $instanceVersion = (Get-CimInstance -Namespace $rootReportServerInstanceNameSpace -Class __NameSpace).Name
+
+    $cimMSReportServerInstance = @{
+        Namespace = '{0}\{1}\{2}' -f $rootReportServerNameSpace, $instanceName, $instanceVersion
+        Class = 'MSReportServer_Instance'
     }
+    $cimReportServerInstanceObject = Get-CimInstance @cimMSReportServerInstance
 
-    @{
-        Configuration          = $reportingServicesConfiguration
-        ReportsApplicationName = $reportsApplicationName
+    $cimMSReportServerConfigurationSetting = @{
+        Namespace = '{0}\Admin' -f $cimMSReportServerInstance.Namespace
+        Class = 'MSReportServer_ConfigurationSetting'
+    }
+    $cimReportServerConfigurationObject = Get-CimInstance @cimMSReportServerConfigurationSetting
+
+    return @{
+        InstanceCIM      = $cimReportServerInstanceObject
+        ConfigurationCIM = $cimReportServerConfigurationObject
     }
 }
 
