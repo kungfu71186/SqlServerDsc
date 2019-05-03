@@ -42,66 +42,108 @@ function Get-TargetResource
         $databaseServerName = $databaseServerName[0]
     }
 
-    #region Get list of servers in cluster
-    $scaleOutServersParameters = @{
-        CimInstance = $configurationCIMObject
-        MethodName = 'ListReportServersInDatabase'
+    $possibleBuiltinAccounts = @{
+        Virtual = 'NT Service\{0}' -f $configurationCIMObject.ServiceName
+        Network = 'NT AUTHORITY\NetworkService'
+        System  = 'NT AUTHORITY\SYSTEM'
+        Local   = 'NT AUTHORITY\LocalService'
     }
-    $scaleOutServers = $(Invoke-RsCimMethod @scaleOutServersParameters).MachineNames
-    #endregion Get list of servers in cluster
+
+    $serviceAccount = $configurationCIMObject.WindowsServiceIdentityConfigured
+    $possibleBuiltinAccounts.GetEnumerator() | ForEach-Object {
+        if ($serviceAccount -eq $_.Value)
+        {
+            $serviceAccount = $_.Key
+        }
+    }
 
     #region Get and separate Report Server URLs in human readable format
-    $invokeRsCimMethodParameters = @{
-        CimInstance = $instanceCIMObject
-        MethodName = 'GetReportServerUrls'
-    }
-
-    $reportServerUrls = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-    # Because GetReportServerUrls returns all urls for all web services, we need to match up
-    # which urls belong to ReportServerWebService and ReportServerWebApp
-    $reportServeUrlList = @{}
-
-    for ( $i = 0; $i -lt $reportServerUrls.ApplicationName.Count; ++$i )
+    try
     {
-        $application = ($reportServerUrls.ApplicationName)[$i]
-        $url = ($reportServerUrls.URLS)[$i]
-        $reportServeUrlList[$application] += @($url)
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $instanceCIMObject
+            MethodName = 'GetReportServerUrls'
+        }
+
+        $reportServerUrls = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+        # Because GetReportServerUrls returns all urls for all web services, we need to match up
+        # which urls belong to ReportServerWebService and ReportServerWebApp
+        $reportServeUrlList = @{}
+
+        for ( $i = 0; $i -lt $reportServerUrls.ApplicationName.Count; ++$i )
+        {
+            $application = ($reportServerUrls.ApplicationName)[$i]
+            $url = ($reportServerUrls.URLS)[$i]
+            $reportServeUrlList[$application] += @($url)
+        }
     }
+    catch
+    {
+        # Report server (Managed not set yet)
+    }
+
     #endregion Get and separate Report Server URLs in human readable format
 
     #region Get and separate Report Server URLs for editing
-    $invokeRsCimMethodParameters = @{
-        CimInstance = $configurationCIMObject
-        MethodName = 'ListReservedURLs'
-    }
-
-    $reportServerUrlModifiable = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-    # Because ListReservedURLs returns all urls for all web services, we need to match up
-    # which urls belong to ReportServerWebService and ReportServerWebApp
-    $reportServerUrlModifiableList = @{}
-
-    for ( $i = 0; $i -lt $reportServerUrlModifiable.Application.Count; ++$i )
+    try
     {
-        $application = ($reportServerUrlModifiable.Application)[$i]
-        $urlString = ($reportServerUrlModifiable.UrlString)[$i]
-        $reportServerUrlModifiableList[$application] += @($urlString)
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $configurationCIMObject
+            MethodName = 'ListReservedURLs'
+        }
+
+        $reportServerUrlModifiable = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+        # Because ListReservedURLs returns all urls for all web services, we need to match up
+        # which urls belong to ReportServerWebService and ReportServerWebApp
+        $reportServerUrlModifiableList = @{}
+
+        for ( $i = 0; $i -lt $reportServerUrlModifiable.Application.Count; ++$i )
+        {
+            $application = ($reportServerUrlModifiable.Application)[$i]
+            $urlString = ($reportServerUrlModifiable.UrlString)[$i]
+            $reportServerUrlModifiableList[$application] += @($urlString)
+        }
     }
+    catch
+    {
+        # Report server front-end urls not set
+    }
+
     #endregion Get and separate Report Server URLs for editing
 
+    #region Get list of servers in cluster
+    try
+    {
+        $scaleOutServersParameters = @{
+            CimInstance = $configurationCIMObject
+            MethodName = 'ListReportServersInDatabase'
+        }
 
-    $getTargetResourceResult = @{
+        $scaleOutServers = $(Invoke-RsCimMethod @scaleOutServersParameters).MachineNames
+    }
+    catch
+    {
+        # DB Hasn't been initilized yet
+    }
+
+    #endregion Get list of servers in cluster
+
+    $getTargetResourceResult = [ordered]@{
         InstanceName           = $instanceCIMObject.InstanceName
         Version                = $instanceCIMObject.Version
         EditionName            = $instanceCIMObject.EditionName
         InstallationID         = $configurationCIMObject.InstallationID
         IsInitialized          = $configurationCIMObject.IsInitialized
         ReportServerConfigPath = $configurationCIMObject.PathName
+        ServiceName            = $configurationCIMObject.ServiceName
 
         # Service Account
-        ServiceAccountActual = $configurationCIMObject.WindowsServiceIdentityActual
-        ServiceAccount       = $configurationCIMObject.WindowsServiceIdentityConfigured
+        #TODO: Convert Service account if builtin account
+        ServiceAccount           = $serviceAccount
+        ServiceAccountConfigured = $configurationCIMObject.WindowsServiceIdentityConfigured
+        ServiceAccountActual     = $configurationCIMObject.WindowsServiceIdentityActual
 
         # Web Service URL
         ReportServerVirtualDirectory = $configurationCIMObject.VirtualDirectoryReportServer
@@ -233,21 +275,62 @@ function Set-TargetResource
         [System.String]
         $DatabaseInstanceName,
 
-        [Parameter()]
+        [Parameter(Mandatory = $true)]
         [System.String]
-        $ReportServerVirtualDirectory,
+        $DatabaseName,
 
         [Parameter()]
         [System.String]
-        $ReportsVirtualDirectory,
+        $DatabaseAuthentication,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $DatabaseSQLCredential,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ServiceAccount,
+
+        [Parameter()]
+        [System.String]
+        $ReportServerVirtualDirectory = 'ReportServer',
 
         [Parameter()]
         [System.String[]]
-        $ReportServerReservedUrl,
+        $ReportServerReservedUrl = 'http://+:80',
+
+        [Parameter()]
+        [System.String]
+        $ReportsVirtualDirectory = 'Reports',
 
         [Parameter()]
         [System.String[]]
-        $ReportsReservedUrl,
+        $ReportsReservedUrl = 'http://+:80',
+
+        [Parameter()]
+        [System.String]
+        $EmailSender,
+
+        [Parameter()]
+        [System.String]
+        $EmailSMTP,
+
+        [Parameter()]
+        [ValidateSet('None','Basic','Integrated')]
+        [System.String]
+        $EmailAuthentication = 'None',
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $EmailSMTPUser,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ExecutionAccount,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $FileShareAccount,
 
         [Parameter()]
         [System.Boolean]
@@ -255,10 +338,198 @@ function Set-TargetResource
 
         [Parameter()]
         [System.Boolean]
-        $SuppressRestart
+        $UseExistingDatabase
     )
-    $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
 
+    # Need to set these parameters to compare if users are using the default parameter values
+    $PSBoundParameters['ReportServerVirtualDirectory'] = $ReportServerVirtualDirectory
+    $PSBoundParameters['ReportServerReservedUrl']      = $ReportServerReservedUrl
+    $PSBoundParameters['ReportsVirtualDirectory']      = $ReportsVirtualDirectory
+    $PSBoundParameters['ReportsReservedUrl']           = $ReportsReservedUrl
+
+    $compareTargetResource             = Compare-TargetResourceState @PSBoundParameters
+    $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
+    $rsConfigurationCIMInstance        = (Get-ReportingServicesCIM).ConfigurationCIM
+    $lcid = (Get-Culture).LCID
+
+    $compareTargetResource
+
+    #region Check if service account is in compliance
+    $serviceAccountNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {$_.Parameter -eq 'ServiceAccount'}
+    if ($serviceAccountNonCompliantState)
+    {
+        $useBuiltinServiceAccount = $false
+        $serviceName = $compareTargetResource | Where-Object -Filter {$_.Parameter -eq 'ServiceName'}
+        $builtinAccountsConversion = @{
+            Virtual = 'NT Service\{0}' -f $ServiceName.Actual
+            Network = 'Builtin\NetworkService'
+            System  = 'Builtin\System'
+            Local   = 'Builtin\LocalService'
+        }
+
+        $serviceAccountUserName = $serviceAccount.UserName
+        if ($builtinAccountsConversion.ContainsKey($serviceAccountNonCompliantState.Expected))
+        {
+            $useBuiltinServiceAccount = $true
+            $serviceAccountUserName = $builtinAccountsConversion[$serviceAccountNonCompliantState.Expected]
+        }
+
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $rsConfigurationCIMInstance
+            MethodName = 'SetWindowsServiceIdentity'
+            Arguments = @{
+                UseBuiltInAccount = $useBuiltinServiceAccount
+                Account           = $serviceAccountUserName
+                Password          = $serviceAccount.GetNetworkCredential().Password
+            }
+        }
+
+        Invoke-RsCimMethod @invokeRsCimMethodParameters
+    }
+    #endregion Check if service account is in compliance
+
+    #region Check if web service manager is in compliance
+    $webServiceManagerNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {
+        $_.Parameter -eq 'ReportServerVirtualDirectory' -or $_.Parameter -eq 'ReportServerReservedUrl'
+    }
+
+    $webServiceUrlNonCompliantState  = $compareTargetResourceNonCompliant | Where-Object -Filter {
+        $_.Parameter -eq 'ReportServerReservedUrl'
+    }
+
+    # Need to update this as well if service account is changed
+    #URL reservations are created for the current windows service account.
+    #Changing the windows service account requires updating all the URL reservations manually.
+
+    <#
+      Is the Virtual Directory or the reservations urls out of compliance
+
+      if Virtual Directory is out of compliance, we need to remove the urls first
+      and then set the virtual directory
+
+      if urls are out of compliance, we need to remove the urls first and then set them
+      so no matter what we need to remove the urls
+    #>
+    if($webServiceManagerNonCompliantState -or $webServiceUrlNonCompliantState)
+    {
+        $webServiceCommonArguments = @{
+            Lcid = $lcid
+            Application = 'ReportServerWebService'
+        }
+
+        #region Remove URL Strings
+        $webServiceUrlState = $compareTargetResource | Where-Object -Filter {
+            $_.Parameter -eq 'ReportServerReservedUrl'
+        }
+
+        if (-not [String]::IsNullOrEmpty($webServiceUrlState.Actual))
+        {
+            $invokeRsCimMethodParameters = @{
+                CimInstance = $rsConfigurationCIMInstance
+                MethodName = 'RemoveURL'
+                Arguments = $webServiceCommonArguments + @{UrlString = ''}
+            }
+
+            $webServiceUrlState.Actual | ForEach-Object {
+                write-host "urlstring" $_
+                $invokeRsCimMethodParameters.Arguments.UrlString = $_
+                Invoke-RsCimMethod @invokeRsCimMethodParameters
+            }
+        }
+        #endregion Remove URL Strings
+
+        if ($webServiceManagerNonCompliantState)
+        {
+            # Set Virtual Directory on the Web Service (Manager)
+            $invokeRsCimMethodParameters = @{
+                CimInstance = $rsConfigurationCIMInstance
+                MethodName = 'SetVirtualDirectory'
+                Arguments = $webServiceCommonArguments + @{VirtualDirectory = $ReportServerVirtualDirectory}
+            }
+
+            Invoke-RsCimMethod @invokeRsCimMethodParameters
+        }
+
+        # Set the URLS for the Web Service (Manager)
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $rsConfigurationCIMInstance
+            MethodName = 'ReserveURL'
+            Arguments = $webServiceCommonArguments + @{UrlString = ''}
+        }
+
+        $ReportServerReservedUrl | ForEach-Object -Process {
+            $invokeRsCimMethodParameters.Arguments.UrlString = $_
+            Invoke-RsCimMethod @invokeRsCimMethodParameters
+        }
+    }
+    #endregion Check if web service manager is in compliance
+
+    #region Check if database is in compliance
+    <#
+      You can use an existing database or create a new one
+      Probably set a new parameter, useExisting
+
+      Check if database exists first and then if it does use existing to join
+      the server as a scale-out server to the database
+
+      Otherwise we need to create the database first
+    #>
+    $getTargetReportServer = Get-TargetResource
+    if (-not $getTargetReportServer.IsInitialized)
+    {
+        $connectSQLParameters = @{
+            ServerName = $DatabaseServerName
+            InstanceName = $DatabaseInstanceName
+        }
+
+        if ($DatabaseAuthentication -eq 'SQL')
+        {
+            $connectSQLParameters = $connectSQLParameters + @{
+                SetupCredential = $DatabaseSQLCredential
+                LoginType = 'SqlLogin'
+            }
+
+            $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
+        }
+        else
+        {
+            $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
+        }
+
+        if ($databaseServerSQLInstance.Databases[$DatabaseName])
+        {
+            # Database exists, so we don't create, but possibly add the node
+        }
+        else
+        {
+            <#
+              Database does not exist, so we need to create it
+              Create the ReportServer and ReportServerTempDB databases
+            #>
+            $invokeRsCimMethodParameters = @{
+                CimInstance = $rsConfigurationCIMInstance
+                MethodName = 'GenerateDatabaseCreationScript'
+                Arguments = @{
+                    DatabaseName = $DatabaseName
+                    IsSharePointMode = $false # ALWAYS FALSE
+                    Lcid = $lcid
+                }
+            }
+
+            [string]$reportServerGeneratedSQLScript = (Invoke-RsCimMethod @invokeRsCimMethodParameters).Script
+
+            Invoke-Query -SQLServer $DatabaseServerName -SQLInstanceName $DatabaseInstanceName -Query $reportServerGeneratedSQLScript -Database master
+            $masterDatabase = $databaseServerSQLInstance.Databases['master']
+            $masterDatabase.ExecuteNonQuery($reportServerGeneratedSQLScript)
+        }
+
+
+        # This server hasn't been join to the report server database yet if it's not initialized.
+        # Now we can check if the database even exists, if it doesn't exist, we need to create it
+        Import-SQLPSModule
+        Invoke-Sqlcmd -ServerInstance $reportingServicesConnection -Query
+    }
+    #endregion Check if database is in compliance
 
 }
 
@@ -419,7 +690,7 @@ function Compare-TargetResourceState
         $DatabaseSQLCredential,
 
         [Parameter()]
-        [System.String]
+        [System.Management.Automation.PSCredential]
         $ServiceAccount,
 
         [Parameter()]
@@ -468,33 +739,55 @@ function Compare-TargetResourceState
         $UseSsl
     )
 
+    $parametersToCompare = @{} + $PSBoundParameters
     $getTargetResourceResult = Get-TargetResource
     $compareTargetResource = @()
 
+    # Need to add these parameters for set
+    $parametersToCompare['ServiceName'] = $getTargetResourceResult.ServiceName
+
     # Only check parameters that we passed in explicitly
-    foreach ($parameter in $PSBoundParameters.Keys)
+    foreach ($parameter in $parametersToCompare.Keys)
     {
-        $expectedValue = $PSBoundParameters.$parameter
+        $expectedValue = $parametersToCompare.$parameter
         $actualValue   = $getTargetResourceResult.$parameter
 
         # We only need the username from credentials to compare
         if ($expectedValue -is [PSCredential])
         {
-            $expectedValue = $PSBoundParameters.$parameter.UserName
+            $expectedValue = $parametersToCompare.$parameter.UserName
         }
 
         # Need to check if parameter is part of schema, otherwise ignore all other parameters like verbose
-        if ($getTargetResourceResult.ContainsKey($parameter))
+        if ($getTargetResourceResult.Contains($parameter))
         {
-            $difference = Compare-Object -ReferenceObject $expectedValue -DifferenceObject $actualValue
+            $isOutOfCompliance = $false
+            # Check if any of the values are null since compare-object can't compare null values
+            if ([String]::IsNullOrEmpty($expectedValue) -or [String]::IsNullOrEmpty($actualValue))
+            {
+                # If one of the values are null, but the other isn't, it's out of compliance
+                if (-not [String]::IsNullOrEmpty($expectedValue) -or -not [String]::IsNullOrEmpty($actualValue))
+                {
+                    $isOutOfCompliance = $true
+                }
+            }
+            else
+            {
+                $difference = Compare-Object -ReferenceObject $expectedValue -DifferenceObject $actualValue
+                if ($difference)
+                {
+                    $isOutOfCompliance = $true
+                }
+            }
 
-            if(-not $difference)
+            Write-Host $parameter ":" $isOutOfCompliance
+            if($isOutOfCompliance)
             {
                 $compareTargetResource += [pscustomobject] @{
                     Parameter = $parameter
                     Expected  = $expectedValue
                     Actual    = $actualValue
-                    Pass      = $true
+                    Pass      = $false
                 }
             }
             else
@@ -503,7 +796,7 @@ function Compare-TargetResourceState
                     Parameter = $parameter
                     Expected  = $expectedValue
                     Actual    = $actualValue
-                    Pass      = $false
+                    Pass      = $true
                 }
             }
         }

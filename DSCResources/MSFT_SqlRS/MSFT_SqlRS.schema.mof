@@ -7,6 +7,7 @@ class MSFT_SqlRS : OMI_BaseResource
     [Write, Description("The type of authentication to use when connecting to the database server, the default will be Integrated."), ValueMap{"Integrated","SQL"}, Values{"Integrated","SQL"}] String DatabaseAuthentication;
     [Write, Description("SQL user used to logon to the database. This parameter is only used if 'DatabaseAuthentication' is set to 'SQL'"), EmbeddedInstance("MSFT_Credential")] String DatabaseSQLCredential;
     [Write, Description("Service Account used to run the Reporting Services windows service. If using a managed service account, you can specify any password, but the '$' must be attached to the end of the service account name"), EmbeddedInstance("MSFT_Credential")] String ServiceAccount;
+    [Write, Description('Specifies whether or not to use a Builtin Service Account. If this is true, then the ServiceAccount can only include one of the following options {"Virtual", "Network", "System", "Local"}')] Boolean UseBuiltInServiceAccount;
     [Write, Description("Report Server Web Service virtual directory. Optional.")] String ReportServerVirtualDirectory;
     [Write, Description("Report Server URL reservations. Optional. If not specified, 'http://+:80' URL reservation will be used.")] String ReportServerReservedUrl[];
     [Write, Description("Report Manager/Report Web App virtual directory name. Optional.")] String ReportsVirtualDirectory;
