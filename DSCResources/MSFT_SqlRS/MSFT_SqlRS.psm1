@@ -519,8 +519,7 @@ function Set-TargetResource
             [string]$reportServerGeneratedSQLScript = (Invoke-RsCimMethod @invokeRsCimMethodParameters).Script
 
             Invoke-Query -SQLServer $DatabaseServerName -SQLInstanceName $DatabaseInstanceName -Query $reportServerGeneratedSQLScript -Database master
-            $masterDatabase = $databaseServerSQLInstance.Databases['master']
-            $masterDatabase.ExecuteNonQuery($reportServerGeneratedSQLScript)
+
         }
 
 
