@@ -1390,46 +1390,55 @@ InModuleScope 'DscResource.Common' {
         BeforeAll {
             $mockExpectedQuery = ''
 
-            $mockConnectSql = {
-                return @(
-                    (
-                        New-Object -TypeName PSObject -Property @{
-                            Databases = @{
-                                'master' = (
-                                    New-Object -TypeName PSObject -Property @{ Name = 'master' } |
-                                        Add-Member -MemberType ScriptMethod -Name ExecuteNonQuery -Value {
-                                            param
-                                            (
-                                                [Parameter()]
-                                                [System.String]
-                                                $sqlCommand
-                                            )
+            $mockSetupCredentialUserName = 'TestUserName12345'
+            $mockSetupCredentialPassword = 'StrongOne7.'
+            $mockSetupCredentialSecurePassword = ConvertTo-SecureString -String $mockSetupCredentialPassword -AsPlainText -Force
+            $mockSetupCredential = New-Object -TypeName PSCredential -ArgumentList ($mockSetupCredentialUserName, $mockSetupCredentialSecurePassword)
 
-                                            if ( $sqlCommand -ne $mockExpectedQuery )
-                                            {
-                                                throw
-                                            }
-                                        } -PassThru |
-                                        Add-Member -MemberType ScriptMethod -Name ExecuteWithResults -Value {
-                                            param
-                                            (
-                                                [Parameter()]
-                                                [System.String]
-                                                $sqlCommand
-                                            )
-
-                                            if ( $sqlCommand -ne $mockExpectedQuery )
-                                            {
-                                                throw
-                                            }
-
-                                            return New-Object -TypeName System.Data.DataSet
-                                        } -PassThru
-                                )
-                            }
-                        }
-                    )
+            $masterDatabaseObject = New-Object -TypeName PSObject
+            $masterDatabaseObject | Add-Member -MemberType NoteProperty -Name 'Name' -Value 'master'
+            $masterDatabaseObject | Add-Member -MemberType ScriptMethod -Name 'ExecuteNonQuery' -Value {
+                param
+                (
+                    [Parameter()]
+                    [System.String]
+                    $sqlCommand
                 )
+
+                if ( $sqlCommand -ne $mockExpectedQuery )
+                {
+                    throw
+                }
+            }
+
+            $masterDatabaseObject | Add-Member -MemberType ScriptMethod -Name 'ExecuteWithResults' -Value {
+                param
+                (
+                    [Parameter()]
+                    [System.String]
+                    $sqlCommand
+                )
+
+                if ( $sqlCommand -ne $mockExpectedQuery )
+                {
+                    throw
+                }
+
+                return New-Object -TypeName System.Data.DataSet
+            }
+
+            $databasesObject = New-Object -TypeName PSObject
+            $databasesObject | Add-Member -MemberType NoteProperty -Name 'Databases' -Value @{
+                'master' = $masterDatabaseObject
+            }
+
+            $mockSMOServer = New-Object -TypeName 'Microsoft.SqlServer.Management.Smo.Server'
+            $mockSMOServer | Add-Member -MemberType NoteProperty -Name 'Databases' -Value @{
+                'master' = $masterDatabaseObject
+            } -Force
+
+            $mockConnectSql = {
+                return @($databasesObject)
             }
 
             $mockThrowLocalizedMessage = {
@@ -1443,10 +1452,16 @@ InModuleScope 'DscResource.Common' {
         }
 
         $queryParams = @{
-            SQLServer = 'Server1'
-            SQLInstanceName = 'MSSQLSERVER'
-            Database = 'master'
-            Query = ''
+            SQLServer          = 'Server1'
+            SQLInstanceName    = 'MSSQLSERVER'
+            Database           = 'master'
+            Query              = ''
+            DatabaseCredential = $mockSetupCredential
+        }
+
+        $queryParametersWithSMO = @{
+            Query              = ''
+            SqlManagementObject = $mockSMOServer
         }
 
         Context 'Execute a query with no results' {
@@ -1484,6 +1499,46 @@ InModuleScope 'DscResource.Common' {
                 { Invoke-Query @queryParams -WithResults } | Should -Throw ($script:localizedData.ExecuteQueryWithResultsFailed -f $queryParams.Database)
 
                 Assert-MockCalled -CommandName Connect-SQL -Scope It -Times 1 -Exactly
+            }
+        }
+
+        Context 'Pass in an SMO Server Object' {
+            Context 'Execute a query with no results' {
+                It 'Should execute the query silently' {
+                    $queryParametersWithSMO.Query = "EXEC sp_configure 'show advanced option', '1'"
+                    $mockExpectedQuery = $queryParametersWithSMO.Query.Clone()
+
+                    { Invoke-Query @queryParametersWithSMO } | Should -Not -Throw
+
+                    Assert-MockCalled -CommandName Connect-SQL -Scope It -Times 0 -Exactly
+                }
+
+                It 'Should throw the correct error, ExecuteNonQueryFailed, when executing the query fails' {
+                    $queryParametersWithSMO.Query = 'BadQuery'
+
+                    { Invoke-Query @queryParametersWithSMO } | Should -Throw ($script:localizedData.ExecuteNonQueryFailed -f $queryParams.Database)
+
+                    Assert-MockCalled -CommandName Connect-SQL -Scope It -Times 0 -Exactly
+                }
+            }
+
+            Context 'Execute a query with results' {
+                It 'Should execute the query and return a result set' {
+                    $queryParametersWithSMO.Query = 'SELECT name FROM sys.databases'
+                    $mockExpectedQuery = $queryParametersWithSMO.Query.Clone()
+
+                    Invoke-Query @queryParametersWithSMO -WithResults | Should -Not -BeNullOrEmpty
+
+                    Assert-MockCalled -CommandName Connect-SQL -Scope It -Times 0 -Exactly
+                }
+
+                It 'Should throw the correct error, ExecuteQueryWithResultsFailed, when executing the query fails' {
+                    $queryParametersWithSMO.Query = 'BadQuery'
+
+                    { Invoke-Query @queryParametersWithSMO -WithResults } | Should -Throw ($script:localizedData.ExecuteQueryWithResultsFailed -f $queryParams.Database)
+
+                    Assert-MockCalled -CommandName Connect-SQL -Scope It -Times 0 -Exactly
+                }
             }
         }
     }
