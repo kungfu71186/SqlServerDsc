@@ -1047,9 +1047,55 @@ function Get-SQLServerVersion
     $sqlVersion
 }
 
+Function Get-SQLSkuFromSQLVersion
+{
+    param
+    (
+        [System.String] $SQLVersion
+    )
+
+    switch ($SQLVersion)
+    {
+        '*EVALUATION*' {
+            return 'Evaluation'
+        }
+        '*BETA*' {
+            return 'Evaluation'
+        }
+        '*CORE*' {
+            return 'EnterpriseCore'
+        }
+        '*DEVELOPER*' {
+            return 'Developer'
+        }
+        '*SQL AZURE*' {
+            return 'SqlAzure'
+        }
+        '*WORKGROUP*' {
+            return 'Workgroup'
+        }
+        '*EXPRESS*' {
+            return 'Express'
+        }
+        '*WEB*' {
+            return 'Web'
+        }
+        '*DATA*CENTER*' {
+            return 'DataCenter'
+        }
+        '*BUSINESS*INTELLIGENCE*' {
+            return 'BusinessIntelligence'
+        }
+        default {
+            return 'None'
+        }
+    }
+}
+
 function Assert-NewSQLInstanceSku
 {
-
+    #compare sql sku or rs sku, but how do we get rs sku? We do we get edition from fullname and then convert to
+    #edition
 }
 
 function Assert-CatalogSkuCompatibility
@@ -1088,7 +1134,7 @@ function Set-RSDSN
 }
 
 
-Function Get-SQLSkuInfo
+Function Get-RSSkuInfo
 {
     $productTypeSSRS = [PSCustomObject]@{
         FullName            = 'SQL Server Reporting Services'
@@ -1108,7 +1154,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsEvaluation = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsEvaluation'
+        Edition         = 'SsrsEvaluation'
         CommandLineName = 'EVAL'
         FullName        = 'SQL Server Evaluation'
         PkConfigName    = 'EVAL'
@@ -1120,7 +1166,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsDeveloper = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsDeveloper'
+        Edition         = 'SsrsDeveloper'
         CommandLineName = 'DEV'
         FullName        = 'SQL Server Developer'
         PkConfigName    = 'DEVELOPER'
@@ -1132,7 +1178,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsExpress = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsExpress'
+        Edition         = 'SsrsExpress'
         CommandLineName = 'EXPR'
         FullName        = 'SQL Server Express'
         PkConfigName    = 'EXPRESS_ADVANCED'
@@ -1144,7 +1190,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsWeb = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsWeb'
+        Edition         = 'SsrsWeb'
         CommandLineName = 'WEB'
         FullName        = 'SQL Server Web'
         PkConfigName    = 'WEB'
@@ -1156,7 +1202,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsStandard = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsStandard'
+        Edition         = 'SsrsStandard'
         CommandLineName = 'STANDARD'
         FullName        = 'SQL Server Standard'
         PkConfigName    = 'STANDARD'
@@ -1168,7 +1214,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsEnterprise = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsEnterprise'
+        Edition         = 'SsrsEnterprise'
         CommandLineName = 'ENTERPRISE'
         FullName        = 'SQL Server Enterprise'
         PkConfigName    = 'ENTERPRISE'
@@ -1180,7 +1226,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypeSsrsEnterpriseCore = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsEnterpriseCore'
+        Edition         = 'SsrsEnterpriseCore'
         CommandLineName = 'ENTERPRISECORE'
         FullName        = 'SQL Server Enterprise (Core-Based Licensing)'
         PkConfigName    = 'ENTERPRISE CORE'
@@ -1192,7 +1238,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypePbirsEvaluation = [PSCustomObject]@{
-        SkuTypeName     = 'SsrsEvaluation'
+        Edition         = 'SsrsEvaluation'
         CommandLineName = 'EVAL'
         FullName        = 'Power BI Report Server - Evaluation'
         PkConfigName    = 'EVAL'
@@ -1204,7 +1250,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypePbirsDeveloper = [PSCustomObject]@{
-        SkuTypeName     = 'PbirsDeveloper'
+        Edition     = 'PbirsDeveloper'
         CommandLineName = 'DEV'
         FullName        = 'Power BI Report Server - Developer'
         PkConfigName    = 'DEVELOPER'
@@ -1216,7 +1262,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypePbirsPremium = [PSCustomObject]@{
-        SkuTypeName     = 'PbirsPremium'
+        Edition         = 'PbirsPremium'
         CommandLineName = 'PREMIUM'
         FullName        = 'Power BI Report Server - Premium'
         PkConfigName    = 'PBI PREMIUM'
@@ -1228,7 +1274,7 @@ Function Get-SQLSkuInfo
     }
 
     $skuTypePbirsSqlServerEeSa = [PSCustomObject]@{
-        SkuTypeName     = 'PbirsSqlServerEeSa'
+        Edition         = 'PbirsSqlServerEeSa'
         CommandLineName = 'SQLEESA'
         FullName        = 'Power BI Report Server - SQL Server Enterprise with Software Assurance'
         PkConfigName    = 'SQL SERVER EE SA'
@@ -1253,7 +1299,7 @@ Function Get-SQLSkuInfo
     )
 }
 
-Function Assert-IsFeatureEnabled
+Function Test-IsFeatureEnabled
 {
     param
     (
