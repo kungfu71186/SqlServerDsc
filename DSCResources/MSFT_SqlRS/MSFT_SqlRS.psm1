@@ -21,14 +21,20 @@ function Get-TargetResource
     (
     )
 
+    # Retrieve both CIM objects
     $reportingServicesCIMObjects = Get-ReportingServicesCIM
 
+    # Instance object is the actual SSRS/PBIRS Instance. Some information in here that is useful
     $instanceCIMObject      = $reportingServicesCIMObjects.InstanceCIM
+    # Most of the configuration settings are retrieved from here
     $configurationCIMObject = $reportingServicesCIMObjects.ConfigurationCIM
 
+    # These are the logon types, this gets converted to something that is human readable instead of a number
     $databaseLogonTypes = @('Windows Login', 'SQL Server Account', 'Current User - Integrated Security')
+    # SMTP authentication types, this gets converted to something that is human readable instead of a number
     $smtpAuthenticationTypes = @('No Authentication', 'Username and password (Basic)', 'Report service service account (NTLM)')
 
+    #region Split the Database instance into server name and instance
     # Probably shouldn't be breaking it up like this
     $databaseServerName = ($configurationCIMObject.DatabaseServerName).Split('\')
     if($databaseServerName[1])
@@ -41,7 +47,9 @@ function Get-TargetResource
         $databaseServerInstance = 'MSSQLSERVER'
         $databaseServerName = $databaseServerName[0]
     }
+    #endregion Split the Database instance into server name and instance
 
+    #region Convert service account to the keyword this resource uses
     $possibleBuiltinAccounts = @{
         Virtual = 'NT Service\{0}' -f $configurationCIMObject.ServiceName
         Network = 'NT AUTHORITY\NetworkService'
@@ -56,6 +64,7 @@ function Get-TargetResource
             $serviceAccount = $_.Key
         }
     }
+    #endregion Convert service account to the keyword this resource uses
 
     #region Get and separate Report Server URLs in human readable format
     try
@@ -140,7 +149,6 @@ function Get-TargetResource
         ServiceName            = $configurationCIMObject.ServiceName
 
         # Service Account
-        #TODO: Convert Service account if builtin account
         ServiceAccount           = $serviceAccount
         ServiceAccountConfigured = $configurationCIMObject.WindowsServiceIdentityConfigured
         ServiceAccountActual     = $configurationCIMObject.WindowsServiceIdentityActual
@@ -275,9 +283,9 @@ function Set-TargetResource
         [System.String]
         $DatabaseInstanceName,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter()]
         [System.String]
-        $DatabaseName,
+        $DatabaseName = 'ReportServer',
 
         [Parameter()]
         [System.String]
@@ -340,6 +348,30 @@ function Set-TargetResource
         [System.Boolean]
         $UseExistingDatabase
     )
+<#
+Connect to database user is different than the granted rights user
+#>
+    <#
+      This script follows the same process the SSRS/PBIRS GUI installation uses
+      ========== Required ===========
+      1. Configure a service account used to run the SSRS/PBIRS service
+      2. Create the Web Service Manager - This is used for backend management and isn't the front-end interface
+      3. Create the Database
+         - Verify Database SKU (What does this do?)
+         - Generate Database script
+         - Run Database script
+         - Generate User rights script
+         - Run User rights script
+         - Set DSN (What does this do?)
+      4. Create the Web Portal (Front-end)
+      ========== Optional ===========
+      5. Configure email settings
+      6. Configure Execution Account
+      7. Encryption Keys - Nothing
+      8. Subscription Settings
+      9. Scale-out Deployment
+      10. PowerBI Cloud
+    #>
 
     # Need to set these parameters to compare if users are using the default parameter values
     $PSBoundParameters['ReportServerVirtualDirectory'] = $ReportServerVirtualDirectory
@@ -397,7 +429,7 @@ function Set-TargetResource
         $_.Parameter -eq 'ReportServerReservedUrl'
     }
 
-    # Need to update this as well if service account is changed
+    #TODO: Need to update this as well if service account is changed
     #URL reservations are created for the current windows service account.
     #Changing the windows service account requires updating all the URL reservations manually.
 
@@ -474,62 +506,58 @@ function Set-TargetResource
 
       Otherwise we need to create the database first
     #>
-    $getTargetReportServer = Get-TargetResource
-    if (-not $getTargetReportServer.IsInitialized)
+
+    Import-SQLPSModule
+
+    $connectSQLParameters = @{
+        ServerName = $DatabaseServerName
+        InstanceName = $DatabaseInstanceName
+    }
+
+    <#
+      DatabaseAuthentication/DatabaseSQLCredential is only used to connect
+      to the sql database, this is NOT the SSRS/PBIRS database user
+    #>
+    if ($DatabaseAuthentication -eq 'SQL')
     {
-        $connectSQLParameters = @{
-            ServerName = $DatabaseServerName
-            InstanceName = $DatabaseInstanceName
+        $connectSQLParameters = $connectSQLParameters + @{
+            SetupCredential = $DatabaseSQLCredential
+            LoginType = 'SqlLogin'
         }
 
-        if ($DatabaseAuthentication -eq 'SQL')
-        {
-            $connectSQLParameters = $connectSQLParameters + @{
-                SetupCredential = $DatabaseSQLCredential
-                LoginType = 'SqlLogin'
+        $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
+    }
+    else
+    {
+        $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
+    }
+
+    if ($databaseServerSQLInstance.Databases[$DatabaseName])
+    {
+        # Database exists, so we don't create, but possibly add the node
+    }
+    else
+    {
+        <#
+            Database does not exist, so we need to create it
+            Create the ReportServer and ReportServerTempDB databases
+        #>
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $rsConfigurationCIMInstance
+            MethodName = 'GenerateDatabaseCreationScript'
+            Arguments = @{
+                DatabaseName = $DatabaseName
+                IsSharePointMode = $false # ALWAYS FALSE
+                Lcid = $lcid
             }
-
-            $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
-        }
-        else
-        {
-            $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
         }
 
-        if ($databaseServerSQLInstance.Databases[$DatabaseName])
-        {
-            # Database exists, so we don't create, but possibly add the node
-        }
-        else
-        {
-            <#
-              Database does not exist, so we need to create it
-              Create the ReportServer and ReportServerTempDB databases
-            #>
-            $invokeRsCimMethodParameters = @{
-                CimInstance = $rsConfigurationCIMInstance
-                MethodName = 'GenerateDatabaseCreationScript'
-                Arguments = @{
-                    DatabaseName = $DatabaseName
-                    IsSharePointMode = $false # ALWAYS FALSE
-                    Lcid = $lcid
-                }
-            }
+        [string]$reportServerGeneratedSQLScript = (Invoke-RsCimMethod @invokeRsCimMethodParameters).Script
 
-            [string]$reportServerGeneratedSQLScript = (Invoke-RsCimMethod @invokeRsCimMethodParameters).Script
+        Invoke-Query -SQLServer $DatabaseServerName -SQLInstanceName $DatabaseInstanceName -Query $reportServerGeneratedSQLScript -Database master
 
-            Invoke-Query -SQLServer $DatabaseServerName -SQLInstanceName $DatabaseInstanceName -Query $reportServerGeneratedSQLScript -Database master
-
-        }
-
-
-        # This server hasn't been join to the report server database yet if it's not initialized.
-        # Now we can check if the database even exists, if it doesn't exist, we need to create it
-        Import-SQLPSModule
-        Invoke-Sqlcmd -ServerInstance $reportingServicesConnection -Query
     }
     #endregion Check if database is in compliance
-
 }
 
 <#
@@ -926,6 +954,471 @@ function Invoke-RsCimMethod
     }
 
     return $invokeCimMethodResult
+}
+
+<#
+    .NOTES
+        Reporting Services can used the built-in account for connecting
+        to the database. When running DSC, it will run under the System
+        user context. For this reason, we should only specify a windows
+        account or sql account. This account will need to be able to
+        create new databases for initial install. For this reason, it
+        may be possible use the Reporting Services account and then remove
+        those privileages after the fact.
+#>
+function New-SQLServerConnection
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter()]
+        [System.String]
+        $DatabaseServerName = $env:COMPUTERNAME,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseInstanceName = 'MSSQLSERVER',
+
+        [Parameter()]
+        [ValidateSet('Integrated', 'Windows', 'SQL')]
+        [System.String]
+        $DatabaseAuthentication = 'Integrated',
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $DatabaseSQLCredential
+    )
+
+    $loginTypes = @{
+        Windows = 'WindowsUser'
+        SQL = 'SqlLogin'
+    }
+
+    $connectSQLParameters = @{
+        ServerName = $DatabaseServerName
+        InstanceName = $DatabaseInstanceName
+    }
+
+    $databaseServerSQLInstance = $null
+
+    if (-not $DatabaseAuthentication -eq 'Integrated')
+    {
+        $connectSQLParameters.SetupCredential = $DatabaseSQLCredential
+        $connectSQLParameters.LoginType = $loginTypes.DatabaseAuthentication
+    }
+
+    try
+    {
+        Write-host 'connecting'
+        $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
+    }
+    catch
+    {
+        #TODO: Issues connecting, throw error
+    }
+
+    return $databaseServerSQLInstance
+}
+
+
+function Get-SQLServerVersion
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(ValueFromPipeline, Mandatory)]
+        [ValidateNotNull()]
+        [Microsoft.SqlServer.Management.Smo.Server]
+        $SqlManagementObject
+    )
+
+    $sqlQuery = "SELECT SERVERPROPERTY('Edition')"
+
+    try
+    {
+        $sqlQueryResults = $SqlManagementObject | Invoke-Query -Query $sqlQuery -WithResults
+        $sqlVersion = $sqlQueryResults.Tables[0].Column1
+    }
+    catch
+    {
+        # Invoke-Query failed
+    }
+
+    $sqlVersion
+}
+
+function Assert-NewSQLInstanceSku
+{
+
+}
+
+function Assert-CatalogSkuCompatibility
+{
+
+}
+
+function New-RSSQLCreateDatabase
+{
+
+}
+
+function Set-RSSQLDatabase
+{
+
+}
+
+function New-RSSQLCredentials
+{
+
+}
+
+function Assert-RSDatabaseExist
+{
+
+}
+
+function New-RSSQLUserRights
+{
+
+}
+
+function Set-RSDSN
+{
+
+}
+
+
+Function Get-SQLSkuInfo
+{
+    $productTypeSSRS = [PSCustomObject]@{
+        FullName            = 'SQL Server Reporting Services'
+        ShortName           = 'SSRS'
+        DefaultInstanceName = 'SSRS'
+    }
+
+    $productTypePBIRS = [PSCustomObject]@{
+        FullName            = 'Power BI Report Server'
+        ShortName           = 'PBIRS'
+        DefaultInstanceName = 'PBIRS'
+    }
+
+    $productTypes = @{
+        SqlServerReportingServices = $productTypeSSRS
+        PowerBiReportServer        = $productTypePBIRS
+    }
+
+    $skuTypeSsrsEvaluation = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsEvaluation'
+        CommandLineName = 'EVAL'
+        FullName        = 'SQL Server Evaluation'
+        PkConfigName    = 'EVAL'
+        ShortName       = 'Evaluation'
+        Guid            = '18F508AC-AE35-4D36-8C8C-C1AD2B86B9EB'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $false
+        ProductId       = 20
+    }
+
+    $skuTypeSsrsDeveloper = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsDeveloper'
+        CommandLineName = 'DEV'
+        FullName        = 'SQL Server Developer'
+        PkConfigName    = 'DEVELOPER'
+        ShortName       = 'Developer'
+        Guid            = 'DEE16405-1594-4D48-90BC-DBDAA97F25E0'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $false
+        ProductId       = 21
+    }
+
+    $skuTypeSsrsExpress = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsExpress'
+        CommandLineName = 'EXPR'
+        FullName        = 'SQL Server Express'
+        PkConfigName    = 'EXPRESS_ADVANCED'
+        ShortName       = 'Express'
+        Guid            = '8CD588A6-811C-40AD-B939-24C63CF6C77C'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $false
+        ProductId       = 22
+    }
+
+    $skuTypeSsrsWeb = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsWeb'
+        CommandLineName = 'WEB'
+        FullName        = 'SQL Server Web'
+        PkConfigName    = 'WEB'
+        ShortName       = 'Web'
+        Guid            = 'ECD8539D-B652-4141-8CFF-B7674C856D8F'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $true
+        ProductId       = 23
+    }
+
+    $skuTypeSsrsStandard = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsStandard'
+        CommandLineName = 'STANDARD'
+        FullName        = 'SQL Server Standard'
+        PkConfigName    = 'STANDARD'
+        ShortName       = 'Standard'
+        Guid            = 'F21BFA60-1FAB-42F2-9A8C-4D03C6E98C34'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $true
+        ProductId       = 24
+    }
+
+    $skuTypeSsrsEnterprise = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsEnterprise'
+        CommandLineName = 'ENTERPRISE'
+        FullName        = 'SQL Server Enterprise'
+        PkConfigName    = 'ENTERPRISE'
+        ShortName       = 'Enterprise'
+        Guid            = '0145C5C1-D24A-4141-9815-2FF76DDF7CEC'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $true
+        ProductId       = 25
+    }
+
+    $skuTypeSsrsEnterpriseCore = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsEnterpriseCore'
+        CommandLineName = 'ENTERPRISECORE'
+        FullName        = 'SQL Server Enterprise (Core-Based Licensing)'
+        PkConfigName    = 'ENTERPRISE CORE'
+        ShortName       = 'Enterprise'
+        Guid            = 'A399186B-AB71-4251-B343-6681EF496FAF'
+        Product         = $productTypes.SqlServerReportingServices
+        RequiresKey     = $true
+        ProductId       = 26
+    }
+
+    $skuTypePbirsEvaluation = [PSCustomObject]@{
+        SkuTypeName     = 'SsrsEvaluation'
+        CommandLineName = 'EVAL'
+        FullName        = 'Power BI Report Server - Evaluation'
+        PkConfigName    = 'EVAL'
+        ShortName       = 'PBIRS Evaluation'
+        Guid            = '519A9098-0389-47AB-BA02-25AB120AB706'
+        Product         = $productTypes.PowerBiReportServer
+        RequiresKey     = $false
+        ProductId       = 30
+    }
+
+    $skuTypePbirsDeveloper = [PSCustomObject]@{
+        SkuTypeName     = 'PbirsDeveloper'
+        CommandLineName = 'DEV'
+        FullName        = 'Power BI Report Server - Developer'
+        PkConfigName    = 'DEVELOPER'
+        ShortName       = 'PBIRS Developer'
+        Guid            = '78426786-77FE-462C-B921-6AE8F1AB9062'
+        Product         = $productTypes.PowerBiReportServer
+        RequiresKey     = $false
+        ProductId       = 31
+    }
+
+    $skuTypePbirsPremium = [PSCustomObject]@{
+        SkuTypeName     = 'PbirsPremium'
+        CommandLineName = 'PREMIUM'
+        FullName        = 'Power BI Report Server - Premium'
+        PkConfigName    = 'PBI PREMIUM'
+        ShortName       = 'PBIRS Premium'
+        Guid            = '6B2E5C11-3AB7-4F3F-88CD-15FD73BF45AB'
+        Product         = $productTypes.PowerBiReportServer
+        RequiresKey     = $true
+        ProductId       = 32
+    }
+
+    $skuTypePbirsSqlServerEeSa = [PSCustomObject]@{
+        SkuTypeName     = 'PbirsSqlServerEeSa'
+        CommandLineName = 'SQLEESA'
+        FullName        = 'Power BI Report Server - SQL Server Enterprise with Software Assurance'
+        PkConfigName    = 'SQL SERVER EE SA'
+        ShortName       = 'PBIRS SQL EESA'
+        Guid            = '0361A3D4-EEAA-4033-9033-4F42BE2ED7AF'
+        Product         = $productTypes.PowerBiReportServer
+        RequiresKey     = $true
+        ProductId       = 33
+    }
+
+    return @(
+        $skuTypeSsrsEvaluation
+        $skuTypeSsrsDeveloper
+        $skuTypeSsrsExpress
+        $skuTypeSsrsWeb
+        $skuTypeSsrsEnterprise
+        $skuTypeSsrsEnterpriseCore
+        $skuTypePbirsEvaluation
+        $skuTypePbirsDeveloper
+        $skuTypePbirsPremium
+        $skuTypePbirsSqlServerEeSa
+    )
+}
+
+Function Assert-IsFeatureEnabled
+{
+    param
+    (
+        [System.String] $Feature,
+
+        [ValidateSet(
+            'SsrsExpress', 'SsrsWeb', 'SsrsStandard', 'SsrsEvaluation',
+            'SsrsDeveloper', 'SsrsEnterpriseCore', 'SsrsEnterprise',
+            'PbirsEvaluation', 'PbirsDeveloper', 'PbirsPremium', 'PbirsSqlServerEeSa'
+        )]
+        [System.String] $Sku
+    )
+
+    $disabledFeatures = @(
+        'Sharepoint'
+        'DataAlerting'
+        'Crescent'
+        'CommentAlerting'
+    )
+
+    $standardOrHigherFeatures = @(
+        'NonSqlDataSources'
+        'OtherSkuDatasources'
+        'RemoteDataSources'
+        'Caching'
+        'ExecutionSnapshots'
+        'History'
+        'Delivery'
+        'Scheduling'
+        'Extensibility'
+        'Subscriptions'
+        'CustomRolesSecurity'
+        'ModelItemSecurity'
+        'DynamicDrillthrough'
+        'EventGeneration'
+        'ComponentLibrary'
+        'SharedDataset'
+        'PowerBIPinning'
+    )
+
+    $enterpriseOrHigherFeatures = @(
+        'ScaleOut'
+        'DataDrivenSubscriptions'
+        'NoCpuThrottling'
+        'NoMemoryThrottling'
+        'KpiItems'
+        'MobileReportItems'
+        'Branding'
+    )
+
+    $webOrHigherFeatures = @(
+        'ReportBuilder'
+    )
+
+    $pbirsSkuFeatures = @(
+        'ReportBuilder'
+    )
+
+    if ($Feature -in $standardOrHigherFeatures)
+    {
+        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsStandardOrHigher'
+    }
+    elseif ($Feature -eq 'CustomAuth')
+    {
+        return $true
+    }
+    elseif ($Feature -in $disabledFeatures)
+    {
+        return $false
+    }
+    elseif ($Feature -in $enterpriseOrHigherFeatures)
+    {
+        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsEnterpriseOrHigher'
+    }
+    elseif ($Feature -in $webOrHigherFeatures)
+    {
+        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsWebOrHigher'
+    }
+    elseif ($Feature -in $pbirsSkuFeatures)
+    {
+        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsPBIRSSku'
+    }
+    else
+    {
+        return $false
+    }
+}
+
+Function Test-RSFeatureGroup
+{
+    param
+    (
+        [ValidateSet(
+            'SsrsExpress', 'SsrsWeb', 'SsrsStandard', 'SsrsEvaluation',
+            'SsrsDeveloper', 'SsrsEnterpriseCore', 'SsrsEnterprise',
+            'PbirsEvaluation', 'PbirsDeveloper', 'PbirsPremium', 'PbirsSqlServerEeSa'
+        )]
+        [System.String] $Sku,
+
+        [ValidateSet(
+            'IsWebOrHigher', 'IsStandardOrHigher', 'IsEvaluationOrDeveloper',
+            'IsEnterpriseOrHigher', 'IsSSRSSku', 'IsPBIRSSku'
+        )]
+        [System.String] $GroupToTest
+    )
+
+    Function IsWebOrHigher
+    {
+        if ($Sku -ne'SsrsWeb')
+        {
+            return IsStandardOrHigher
+        }
+        return $true
+    }
+
+    Function IsStandardOrHigher
+    {
+        if ($Sku -ne'SsrsStandard')
+        {
+            return IsEvaluationOrDeveloper
+        }
+        return $true
+    }
+
+    Function IsEvaluationOrDeveloper
+    {
+        if ($Sku -ne'SsrsEvaluation' -and $Sku -ne'SsrsDeveloper' -and $Sku -ne'PbirsEvaluation')
+        {
+            return $Sku -eq 'PbirsDeveloper'
+        }
+        return $true
+    }
+
+    Function IsEnterpriseOrHigher
+    {
+        if ($Sku -ne'SsrsDeveloper' -and $Sku -ne'PbirsDeveloper' -and
+             ($Sku -ne'SsrsEvaluation' -and $Sku -ne'PbirsEvaluation') -and
+             ($Sku -ne'SsrsEnterprise' -and $Sku -ne'SsrsEnterpriseCore' -and $Sku -ne'PbirsPremium'))
+        {
+            return $Sku -eq 'PbirsSqlServerEeSa'
+        }
+        return $true
+    }
+
+    Function IsSSRSSku
+    {
+        if ($Sku -ne'SsrsDeveloper' -and $Sku -ne'SsrsEnterprise' -and
+             ($Sku -ne'SsrsEnterpriseCore' -and $Sku -ne'SsrsEvaluation') -and
+             ($Sku -ne'SsrsExpress' -and $Sku -ne'SsrsStandard'))
+        {
+            return $Sku -eq 'SsrsWeb'
+        }
+        return $true
+    }
+
+    Function IsPBIRSSku
+    {
+        if ($Sku -ne'PbirsDeveloper' -and $Sku -ne'PbirsEvaluation' -and $Sku -ne'PbirsPremium')
+        {
+            return $Sku -eq 'PbirsSqlServerEeSa'
+        }
+        return $true
+    }
+
+    & $GroupToTest
 }
 
 Export-ModuleMember -Function *-TargetResource
