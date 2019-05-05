@@ -378,6 +378,17 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $false
             ProductId       = 20
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsDeveloper, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
         }
 
         $skuTypeSsrsDeveloper = [PSCustomObject]@{
@@ -390,6 +401,16 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $false
             ProductId       = 21
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsWeb, [ReportServiceSku]::SsrsStandard,
+                [ReportServiceSku]::SsrsEnterprise, [ReportServiceSku]::SsrsEnterpriseCore
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
         }
 
         $skuTypeSsrsExpress = [PSCustomObject]@{
@@ -402,6 +423,15 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $false
             ProductId       = 22
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsWeb, [ReportServiceSku]::SsrsStandard,
+                [ReportServiceSku]::SsrsDeveloper, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress
+            )
         }
 
         $skuTypeSsrsWeb = [PSCustomObject]@{
@@ -414,6 +444,14 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $true
             ProductId       = 23
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb
+            )
         }
 
         $skuTypeSsrsStandard = [PSCustomObject]@{
@@ -426,6 +464,14 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $true
             ProductId       = 24
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsEnterprise, [ReportServiceSku]::SsrsEnterpriseCore
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard
+            )
         }
 
         $skuTypeSsrsEnterprise = [PSCustomObject]@{
@@ -438,6 +484,15 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $true
             ProductId       = 25
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
         }
 
         $skuTypeSsrsEnterpriseCore = [PSCustomObject]@{
@@ -450,6 +505,15 @@ class ReportServiceSkuUtils
             Product         = $productTypes.SqlServerReportingServices
             RequiresKey     = $true
             ProductId       = 26
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::SsrsEnterprise
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore
+            )
         }
 
         $skuTypePbirsEvaluation = [PSCustomObject]@{
@@ -462,6 +526,18 @@ class ReportServiceSkuUtils
             Product         = $productTypes.PowerBiReportServer
             RequiresKey     = $false
             ProductId       = 30
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::PbirsDeveloper, [ReportServiceSku]::PbirsPremium,
+                [ReportServiceSku]::PbirsSqlServerEeSa
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore, [ReportServiceSku]::PbirsEvaluation,
+                [ReportServiceSku]::PbirsDeveloper, [ReportServiceSku]::PbirsPremium,
+                [ReportServiceSku]::PbirsSqlServerEeSa
+            )
         }
 
         $skuTypePbirsDeveloper = [PSCustomObject]@{
@@ -474,6 +550,17 @@ class ReportServiceSkuUtils
             Product         = $productTypes.PowerBiReportServer
             RequiresKey     = $false
             ProductId       = 31
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::PbirsPremium, [ReportServiceSku]::PbirsSqlServerEeSa
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore, [ReportServiceSku]::PbirsEvaluation,
+                [ReportServiceSku]::PbirsDeveloper, [ReportServiceSku]::PbirsPremium,
+                [ReportServiceSku]::PbirsSqlServerEeSa
+            )
         }
 
         $skuTypePbirsPremium = [PSCustomObject]@{
@@ -486,6 +573,17 @@ class ReportServiceSkuUtils
             Product         = $productTypes.PowerBiReportServer
             RequiresKey     = $true
             ProductId       = 32
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::PbirsSqlServerEeSa
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore, [ReportServiceSku]::PbirsEvaluation,
+                [ReportServiceSku]::PbirsDeveloper, [ReportServiceSku]::PbirsPremium,
+                [ReportServiceSku]::PbirsSqlServerEeSa
+            )
         }
 
         $skuTypePbirsSqlServerEeSa = [PSCustomObject]@{
@@ -498,6 +596,17 @@ class ReportServiceSkuUtils
             Product         = $productTypes.PowerBiReportServer
             RequiresKey     = $true
             ProductId       = 33
+            SkuCanUpgradeTo = @(
+                [ReportServiceSku]::PbirsPremium
+            )
+            SkuSupportsDatabasesCreatedBy = @(
+                [ReportServiceSku]::SsrsEvaluation, [ReportServiceSku]::SsrsDeveloper,
+                [ReportServiceSku]::SsrsExpress, [ReportServiceSku]::SsrsWeb,
+                [ReportServiceSku]::SsrsStandard, [ReportServiceSku]::SsrsEnterprise,
+                [ReportServiceSku]::SsrsEnterpriseCore, [ReportServiceSku]::PbirsEvaluation,
+                [ReportServiceSku]::PbirsDeveloper, [ReportServiceSku]::PbirsPremium,
+                [ReportServiceSku]::PbirsSqlServerEeSa
+            )
         }
 
         return @(
