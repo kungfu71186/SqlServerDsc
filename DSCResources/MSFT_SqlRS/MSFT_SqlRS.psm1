@@ -9,11 +9,13 @@ Import-Module -Name (Join-Path -Path $script:resourceHelperModulePath -ChildPath
 
 $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
+Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_ReportServiceSkuUtils.psm1')
+
 <#
     .SYNOPSIS
         Gets the SQL Reporting Services configuration.
 #>
-function Get-TargetResource
+Function Get-TargetResource
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
@@ -266,7 +268,7 @@ function Get-TargetResource
         is considered on..."
         https://docs.microsoft.com/en-us/sql/reporting-services/wmi-provider-library-reference/configurationsetting-method-setsecureconnectionlevel
 #>
-function Set-TargetResource
+Function Set-TargetResource
 {
     [CmdletBinding()]
     param
@@ -597,7 +599,7 @@ Connect to database user is different than the granted rights user
         settings change. If this parameter is set to $true, Reporting Services
         will not be restarted, even after initialisation.
 #>
-function Test-TargetResource
+Function Test-TargetResource
 {
     [CmdletBinding()]
     param
@@ -691,7 +693,7 @@ function Test-TargetResource
     }
 }
 
-function Compare-TargetResourceState
+Function Compare-TargetResourceState
 {
     [CmdletBinding()]
     param
@@ -895,7 +897,7 @@ function Get-ReportingServicesCIM
     .PARAMETER Arguments
         The arguments that should be
 #>
-function Invoke-RsCimMethod
+Function Invoke-RsCimMethod
 {
     [CmdletBinding()]
     [OutputType([Microsoft.Management.Infrastructure.CimMethodResult])]
@@ -966,7 +968,7 @@ function Invoke-RsCimMethod
         may be possible use the Reporting Services account and then remove
         those privileages after the fact.
 #>
-function New-SQLServerConnection
+Function New-SQLServerConnection
 {
     [CmdletBinding()]
     param
@@ -1019,9 +1021,7 @@ function New-SQLServerConnection
 
     return $databaseServerSQLInstance
 }
-
-
-function Get-SQLServerVersion
+Function Get-SQLServerVersion
 {
     [CmdletBinding()]
     param
@@ -1044,427 +1044,79 @@ function Get-SQLServerVersion
         # Invoke-Query failed
     }
 
-    $sqlVersion
+    return $sqlVersion
 }
 
-Function Get-SQLSkuFromSQLVersion
+Function Test-NewSQLInstanceSku
 {
     param
     (
-        [System.String] $SQLVersion
+        [Parameter(Mandatory)]
+        [System.String] $ReportServicesSku
     )
 
-    switch ($SQLVersion)
+    $sqlVersion = Get-SQLServerVersion
+    try
     {
-        '*EVALUATION*' {
-            return 'Evaluation'
+        $reportServicesSkuUtils = [ReportServiceSkuUtils]::new()
+        if (-not $reportServicesSkuUtils.SetRSSkuFromString($ReportServicesSku))
+        {
+            #TODO: Issue setting sku
         }
-        '*BETA*' {
-            return 'Evaluation'
+
+        $sqlSku = $reportServicesSkuUtils.GetSQLSkuFromSQLEdition($sqlVersion)
+        if ($sqlSku -eq [SqlServerSku]::None)
+        {
+            #TODO: Issue getting sql sku
         }
-        '*CORE*' {
-            return 'EnterpriseCore'
-        }
-        '*DEVELOPER*' {
-            return 'Developer'
-        }
-        '*SQL AZURE*' {
-            return 'SqlAzure'
-        }
-        '*WORKGROUP*' {
-            return 'Workgroup'
-        }
-        '*EXPRESS*' {
-            return 'Express'
-        }
-        '*WEB*' {
-            return 'Web'
-        }
-        '*DATA*CENTER*' {
-            return 'DataCenter'
-        }
-        '*BUSINESS*INTELLIGENCE*' {
-            return 'BusinessIntelligence'
-        }
-        default {
-            return 'None'
-        }
+
+        return $reportServicesSkuUtils.EnsureCorrectEdition($sqlSku)
+    }
+    catch
+    {
+        #TODO: some other kind of error
     }
 }
 
-function Assert-NewSQLInstanceSku
+Function Assert-NewSQLInstanceSku
 {
     #compare sql sku or rs sku, but how do we get rs sku? We do we get edition from fullname and then convert to
     #edition
 }
 
-function Assert-CatalogSkuCompatibility
+Function Assert-CatalogSkuCompatibility
 {
 
 }
 
-function New-RSSQLCreateDatabase
+Function New-RSSQLCreateDatabase
 {
 
 }
 
-function Set-RSSQLDatabase
+Function Set-RSSQLDatabase
 {
 
 }
 
-function New-RSSQLCredentials
+Function New-RSSQLCredentials
 {
 
 }
 
-function Assert-RSDatabaseExist
+Function Assert-RSDatabaseExist
 {
 
 }
 
-function New-RSSQLUserRights
+Function New-RSSQLUserRights
+{
+
+}
+Function Set-RSDSN
 {
 
 }
 
-function Set-RSDSN
-{
-
-}
-
-
-Function Get-RSSkuInfo
-{
-    $productTypeSSRS = [PSCustomObject]@{
-        FullName            = 'SQL Server Reporting Services'
-        ShortName           = 'SSRS'
-        DefaultInstanceName = 'SSRS'
-    }
-
-    $productTypePBIRS = [PSCustomObject]@{
-        FullName            = 'Power BI Report Server'
-        ShortName           = 'PBIRS'
-        DefaultInstanceName = 'PBIRS'
-    }
-
-    $productTypes = @{
-        SqlServerReportingServices = $productTypeSSRS
-        PowerBiReportServer        = $productTypePBIRS
-    }
-
-    $skuTypeSsrsEvaluation = [PSCustomObject]@{
-        Edition         = 'SsrsEvaluation'
-        CommandLineName = 'EVAL'
-        FullName        = 'SQL Server Evaluation'
-        PkConfigName    = 'EVAL'
-        ShortName       = 'Evaluation'
-        Guid            = '18F508AC-AE35-4D36-8C8C-C1AD2B86B9EB'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $false
-        ProductId       = 20
-    }
-
-    $skuTypeSsrsDeveloper = [PSCustomObject]@{
-        Edition         = 'SsrsDeveloper'
-        CommandLineName = 'DEV'
-        FullName        = 'SQL Server Developer'
-        PkConfigName    = 'DEVELOPER'
-        ShortName       = 'Developer'
-        Guid            = 'DEE16405-1594-4D48-90BC-DBDAA97F25E0'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $false
-        ProductId       = 21
-    }
-
-    $skuTypeSsrsExpress = [PSCustomObject]@{
-        Edition         = 'SsrsExpress'
-        CommandLineName = 'EXPR'
-        FullName        = 'SQL Server Express'
-        PkConfigName    = 'EXPRESS_ADVANCED'
-        ShortName       = 'Express'
-        Guid            = '8CD588A6-811C-40AD-B939-24C63CF6C77C'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $false
-        ProductId       = 22
-    }
-
-    $skuTypeSsrsWeb = [PSCustomObject]@{
-        Edition         = 'SsrsWeb'
-        CommandLineName = 'WEB'
-        FullName        = 'SQL Server Web'
-        PkConfigName    = 'WEB'
-        ShortName       = 'Web'
-        Guid            = 'ECD8539D-B652-4141-8CFF-B7674C856D8F'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $true
-        ProductId       = 23
-    }
-
-    $skuTypeSsrsStandard = [PSCustomObject]@{
-        Edition         = 'SsrsStandard'
-        CommandLineName = 'STANDARD'
-        FullName        = 'SQL Server Standard'
-        PkConfigName    = 'STANDARD'
-        ShortName       = 'Standard'
-        Guid            = 'F21BFA60-1FAB-42F2-9A8C-4D03C6E98C34'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $true
-        ProductId       = 24
-    }
-
-    $skuTypeSsrsEnterprise = [PSCustomObject]@{
-        Edition         = 'SsrsEnterprise'
-        CommandLineName = 'ENTERPRISE'
-        FullName        = 'SQL Server Enterprise'
-        PkConfigName    = 'ENTERPRISE'
-        ShortName       = 'Enterprise'
-        Guid            = '0145C5C1-D24A-4141-9815-2FF76DDF7CEC'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $true
-        ProductId       = 25
-    }
-
-    $skuTypeSsrsEnterpriseCore = [PSCustomObject]@{
-        Edition         = 'SsrsEnterpriseCore'
-        CommandLineName = 'ENTERPRISECORE'
-        FullName        = 'SQL Server Enterprise (Core-Based Licensing)'
-        PkConfigName    = 'ENTERPRISE CORE'
-        ShortName       = 'Enterprise'
-        Guid            = 'A399186B-AB71-4251-B343-6681EF496FAF'
-        Product         = $productTypes.SqlServerReportingServices
-        RequiresKey     = $true
-        ProductId       = 26
-    }
-
-    $skuTypePbirsEvaluation = [PSCustomObject]@{
-        Edition         = 'SsrsEvaluation'
-        CommandLineName = 'EVAL'
-        FullName        = 'Power BI Report Server - Evaluation'
-        PkConfigName    = 'EVAL'
-        ShortName       = 'PBIRS Evaluation'
-        Guid            = '519A9098-0389-47AB-BA02-25AB120AB706'
-        Product         = $productTypes.PowerBiReportServer
-        RequiresKey     = $false
-        ProductId       = 30
-    }
-
-    $skuTypePbirsDeveloper = [PSCustomObject]@{
-        Edition     = 'PbirsDeveloper'
-        CommandLineName = 'DEV'
-        FullName        = 'Power BI Report Server - Developer'
-        PkConfigName    = 'DEVELOPER'
-        ShortName       = 'PBIRS Developer'
-        Guid            = '78426786-77FE-462C-B921-6AE8F1AB9062'
-        Product         = $productTypes.PowerBiReportServer
-        RequiresKey     = $false
-        ProductId       = 31
-    }
-
-    $skuTypePbirsPremium = [PSCustomObject]@{
-        Edition         = 'PbirsPremium'
-        CommandLineName = 'PREMIUM'
-        FullName        = 'Power BI Report Server - Premium'
-        PkConfigName    = 'PBI PREMIUM'
-        ShortName       = 'PBIRS Premium'
-        Guid            = '6B2E5C11-3AB7-4F3F-88CD-15FD73BF45AB'
-        Product         = $productTypes.PowerBiReportServer
-        RequiresKey     = $true
-        ProductId       = 32
-    }
-
-    $skuTypePbirsSqlServerEeSa = [PSCustomObject]@{
-        Edition         = 'PbirsSqlServerEeSa'
-        CommandLineName = 'SQLEESA'
-        FullName        = 'Power BI Report Server - SQL Server Enterprise with Software Assurance'
-        PkConfigName    = 'SQL SERVER EE SA'
-        ShortName       = 'PBIRS SQL EESA'
-        Guid            = '0361A3D4-EEAA-4033-9033-4F42BE2ED7AF'
-        Product         = $productTypes.PowerBiReportServer
-        RequiresKey     = $true
-        ProductId       = 33
-    }
-
-    return @(
-        $skuTypeSsrsEvaluation
-        $skuTypeSsrsDeveloper
-        $skuTypeSsrsExpress
-        $skuTypeSsrsWeb
-        $skuTypeSsrsEnterprise
-        $skuTypeSsrsEnterpriseCore
-        $skuTypePbirsEvaluation
-        $skuTypePbirsDeveloper
-        $skuTypePbirsPremium
-        $skuTypePbirsSqlServerEeSa
-    )
-}
-
-Function Test-IsFeatureEnabled
-{
-    param
-    (
-        [System.String] $Feature,
-
-        [ValidateSet(
-            'SsrsExpress', 'SsrsWeb', 'SsrsStandard', 'SsrsEvaluation',
-            'SsrsDeveloper', 'SsrsEnterpriseCore', 'SsrsEnterprise',
-            'PbirsEvaluation', 'PbirsDeveloper', 'PbirsPremium', 'PbirsSqlServerEeSa'
-        )]
-        [System.String] $Sku
-    )
-
-    $disabledFeatures = @(
-        'Sharepoint'
-        'DataAlerting'
-        'Crescent'
-        'CommentAlerting'
-    )
-
-    $standardOrHigherFeatures = @(
-        'NonSqlDataSources'
-        'OtherSkuDatasources'
-        'RemoteDataSources'
-        'Caching'
-        'ExecutionSnapshots'
-        'History'
-        'Delivery'
-        'Scheduling'
-        'Extensibility'
-        'Subscriptions'
-        'CustomRolesSecurity'
-        'ModelItemSecurity'
-        'DynamicDrillthrough'
-        'EventGeneration'
-        'ComponentLibrary'
-        'SharedDataset'
-        'PowerBIPinning'
-    )
-
-    $enterpriseOrHigherFeatures = @(
-        'ScaleOut'
-        'DataDrivenSubscriptions'
-        'NoCpuThrottling'
-        'NoMemoryThrottling'
-        'KpiItems'
-        'MobileReportItems'
-        'Branding'
-    )
-
-    $webOrHigherFeatures = @(
-        'ReportBuilder'
-    )
-
-    $pbirsSkuFeatures = @(
-        'ReportBuilder'
-    )
-
-    if ($Feature -in $standardOrHigherFeatures)
-    {
-        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsStandardOrHigher'
-    }
-    elseif ($Feature -eq 'CustomAuth')
-    {
-        return $true
-    }
-    elseif ($Feature -in $disabledFeatures)
-    {
-        return $false
-    }
-    elseif ($Feature -in $enterpriseOrHigherFeatures)
-    {
-        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsEnterpriseOrHigher'
-    }
-    elseif ($Feature -in $webOrHigherFeatures)
-    {
-        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsWebOrHigher'
-    }
-    elseif ($Feature -in $pbirsSkuFeatures)
-    {
-        return Test-RSFeatureGroup -Sku $Sku -GroupToTest 'IsPBIRSSku'
-    }
-    else
-    {
-        return $false
-    }
-}
-
-Function Test-RSFeatureGroup
-{
-    param
-    (
-        [ValidateSet(
-            'SsrsExpress', 'SsrsWeb', 'SsrsStandard', 'SsrsEvaluation',
-            'SsrsDeveloper', 'SsrsEnterpriseCore', 'SsrsEnterprise',
-            'PbirsEvaluation', 'PbirsDeveloper', 'PbirsPremium', 'PbirsSqlServerEeSa'
-        )]
-        [System.String] $Sku,
-
-        [ValidateSet(
-            'IsWebOrHigher', 'IsStandardOrHigher', 'IsEvaluationOrDeveloper',
-            'IsEnterpriseOrHigher', 'IsSSRSSku', 'IsPBIRSSku'
-        )]
-        [System.String] $GroupToTest
-    )
-
-    Function IsWebOrHigher
-    {
-        if ($Sku -ne'SsrsWeb')
-        {
-            return IsStandardOrHigher
-        }
-        return $true
-    }
-
-    Function IsStandardOrHigher
-    {
-        if ($Sku -ne'SsrsStandard')
-        {
-            return IsEvaluationOrDeveloper
-        }
-        return $true
-    }
-
-    Function IsEvaluationOrDeveloper
-    {
-        if ($Sku -ne'SsrsEvaluation' -and $Sku -ne'SsrsDeveloper' -and $Sku -ne'PbirsEvaluation')
-        {
-            return $Sku -eq 'PbirsDeveloper'
-        }
-        return $true
-    }
-
-    Function IsEnterpriseOrHigher
-    {
-        if ($Sku -ne'SsrsDeveloper' -and $Sku -ne'PbirsDeveloper' -and
-             ($Sku -ne'SsrsEvaluation' -and $Sku -ne'PbirsEvaluation') -and
-             ($Sku -ne'SsrsEnterprise' -and $Sku -ne'SsrsEnterpriseCore' -and $Sku -ne'PbirsPremium'))
-        {
-            return $Sku -eq 'PbirsSqlServerEeSa'
-        }
-        return $true
-    }
-
-    Function IsSSRSSku
-    {
-        if ($Sku -ne'SsrsDeveloper' -and $Sku -ne'SsrsEnterprise' -and
-             ($Sku -ne'SsrsEnterpriseCore' -and $Sku -ne'SsrsEvaluation') -and
-             ($Sku -ne'SsrsExpress' -and $Sku -ne'SsrsStandard'))
-        {
-            return $Sku -eq 'SsrsWeb'
-        }
-        return $true
-    }
-
-    Function IsPBIRSSku
-    {
-        if ($Sku -ne'PbirsDeveloper' -and $Sku -ne'PbirsEvaluation' -and $Sku -ne'PbirsPremium')
-        {
-            return $Sku -eq 'PbirsSqlServerEeSa'
-        }
-        return $true
-    }
-
-    & $GroupToTest
-}
 
 Export-ModuleMember -Function *-TargetResource
