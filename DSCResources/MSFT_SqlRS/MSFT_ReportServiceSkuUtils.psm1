@@ -54,7 +54,7 @@ enum SqlServerSku
          - SqlServerSkuType - SqlServerSku enum
 
         List of resources used from Microsoft.ReportingServices.Editions.dll:
-         - SkuType - ReportServiceSku enum
+         - SkuType - ReportServiceSku enum and GetRSSkuTypes()
 #>
 class ReportServiceSkuUtils
 {
