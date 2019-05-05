@@ -290,8 +290,9 @@ Function Set-TargetResource
         $DatabaseName = 'ReportServer',
 
         [Parameter()]
+        [ValidateSet('Integrated', 'Windows', 'SQL')]
         [System.String]
-        $DatabaseAuthentication,
+        $DatabaseAuthentication = 'Integrated',
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
@@ -348,7 +349,11 @@ Function Set-TargetResource
 
         [Parameter()]
         [System.Boolean]
-        $UseExistingDatabase
+        $UseExistingDatabase,
+
+        [Parameter(ValidateNotNull)]
+        [System.Int]
+        $LCID = (Get-Culture).LCID
     )
 <#
 Connect to database user is different than the granted rights user
@@ -384,7 +389,7 @@ Connect to database user is different than the granted rights user
     $compareTargetResource             = Compare-TargetResourceState @PSBoundParameters
     $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
     $rsConfigurationCIMInstance        = (Get-ReportingServicesCIM).ConfigurationCIM
-    $lcid = (Get-Culture).LCID
+    $getTargetResource                 = Get-TargetResource
 
     $compareTargetResource
 
@@ -447,7 +452,7 @@ Connect to database user is different than the granted rights user
     if($webServiceManagerNonCompliantState -or $webServiceUrlNonCompliantState)
     {
         $webServiceCommonArguments = @{
-            Lcid = $lcid
+            Lcid = $LCID
             Application = 'ReportServerWebService'
         }
 
@@ -511,28 +516,19 @@ Connect to database user is different than the granted rights user
 
     Import-SQLPSModule
 
-    $connectSQLParameters = @{
-        ServerName = $DatabaseServerName
-        InstanceName = $DatabaseInstanceName
+    $sqlConnectParameters = @{
+        DatabaseServerName = $DatabaseServerName
+        DatabaseInstanceName = $DatabaseInstanceName
+        DatabaseAuthentication = $DatabaseAuthentication
     }
 
-    <#
-      DatabaseAuthentication/DatabaseSQLCredential is only used to connect
-      to the sql database, this is NOT the SSRS/PBIRS database user
-    #>
-    if ($DatabaseAuthentication -eq 'SQL')
+    if ($PSBoundParameters.ContainsKey('DatabaseSQLCredential'))
     {
-        $connectSQLParameters = $connectSQLParameters + @{
-            SetupCredential = $DatabaseSQLCredential
-            LoginType = 'SqlLogin'
-        }
+        $sqlConnectParameters.DatabaseSQLCredential = $DatabaseSQLCredential
+    }
 
-        $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
-    }
-    else
-    {
-        $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
-    }
+    # New-SQLServerConnection will check if we can connect to database
+    $databaseServerSQLInstance = New-SQLServerConnection @sqlConnectParameters
 
     if ($databaseServerSQLInstance.Databases[$DatabaseName])
     {
@@ -544,19 +540,17 @@ Connect to database user is different than the granted rights user
             Database does not exist, so we need to create it
             Create the ReportServer and ReportServerTempDB databases
         #>
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $rsConfigurationCIMInstance
-            MethodName = 'GenerateDatabaseCreationScript'
-            Arguments = @{
-                DatabaseName = $DatabaseName
-                IsSharePointMode = $false # ALWAYS FALSE
-                Lcid = $lcid
-            }
+        $getReportServiceFullName = $getTargetResource.EditionName
+
+        #TODO: Need new parameter to specify report services database user
+        $newDatabaseCreationParameters = @{
+            ReportingServicesFullName = $getReportServiceFullName
+            DatabaseName = $DatabaseName
+            LCID = $LCID
+
         }
 
-        [string]$reportServerGeneratedSQLScript = (Invoke-RsCimMethod @invokeRsCimMethodParameters).Script
-
-        Invoke-Query -SQLServer $DatabaseServerName -SQLInstanceName $DatabaseInstanceName -Query $reportServerGeneratedSQLScript -Database master
+        $databaseServerSQLInstance | New-CreateNewDatabase @newDatabaseCreationParameters
 
     }
     #endregion Check if database is in compliance
@@ -947,7 +941,7 @@ Function Invoke-RsCimMethod
         {
             $errorMessage = $invokeCimMethodResult.Error
         }
-
+        #TODO: create localized string
         throw 'Method {0}() failed with an error. Error: {1} (HRESULT:{2})' -f @(
             $MethodName
             $errorMessage
@@ -1011,7 +1005,6 @@ Function New-SQLServerConnection
 
     try
     {
-        Write-host 'connecting'
         $databaseServerSQLInstance = Connect-SQL @connectSQLParameters
     }
     catch
@@ -1021,7 +1014,7 @@ Function New-SQLServerConnection
 
     return $databaseServerSQLInstance
 }
-Function Get-SQLServerVersion
+Function Get-SQLServerEdition
 {
     [CmdletBinding()]
     param
@@ -1047,6 +1040,78 @@ Function Get-SQLServerVersion
     return $sqlVersion
 }
 
+Function New-CreateNewDatabase
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(ValueFromPipeline, Mandatory)]
+        [ValidateNotNull()]
+        [Microsoft.SqlServer.Management.Smo.Server]
+        $SqlManagementObject,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNull()]
+        [System.String]
+        $ReportingServicesFullName,
+
+        [Parameter(Mandatory)]
+        [System.String]
+        $DatabaseName,
+
+        [Parameter(ValidateNotNull)]
+        [System.Int]
+        $LCID = (Get-Culture).LCID
+
+
+    )
+
+    #TODO: Check if the reporting services and database are being installed on the same server
+    #TODO: Write-verbose to include check for local server
+    #Get-IsLocalServer
+
+    #TODO: Write-verbose to include set sku type
+    $reportingServiceSkuUtil =  Get-ReportServiceSkuUtils
+    $reportingServiceSkuUtil.SetRSSkuFromString($ReportingServicesFullName)
+
+    #TODO: Write-verbose to include sql edition
+    $sqlEdition = $SqlManagementObject | Get-SQLServerEdition
+
+    #TODO: Write-verbose to include comparison
+    $correctEditionComparison = $reportingServiceSkuUtil.EnsureCorrectEdition($sqlEdition)
+
+    #TODO: Should we leave error checking in utils or do it here?
+    #If we do it here, I need to know which error to return
+    if (-not $correctEditionComparison)
+    {
+
+    }
+
+    # Everything checks out ok, now we can create the database script
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $rsConfigurationCIMInstance
+        MethodName = 'GenerateDatabaseCreationScript'
+        Arguments = @{
+            DatabaseName = $DatabaseName
+            IsSharePointMode = $false # ALWAYS FALSE
+            Lcid = $LCID
+        }
+    }
+
+    #TODO: Write-verbose to include starting database script
+    [string]$reportServerGeneratedSQLScript = (Invoke-RsCimMethod @invokeRsCimMethodParameters).Script
+
+    # Invoke-Query will throw errors
+    #TODO: Write-verbose to include starting database creation
+    $SqlManagementObject | Invoke-Query -Query $reportServerGeneratedSQLScript -Database 'master'
+
+    #TODO: Write-verbose to include creation of user script
+
+    #TODO: Write-verbose to include setting user database permissions
+
+    #TODO: Write-verbose to include set DSN
+}
+
 Function Test-NewSQLInstanceSku
 {
     param
@@ -1055,7 +1120,7 @@ Function Test-NewSQLInstanceSku
         [System.String] $ReportServicesSku
     )
 
-    $sqlVersion = Get-SQLServerVersion
+    $sqlVersion = Get-SQLServerEdition
     try
     {
         $reportServicesSkuUtils = [ReportServiceSkuUtils]::new()

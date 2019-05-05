@@ -72,11 +72,20 @@ class ReportServiceSkuUtils
 
     <#
         .SYNOPSIS
-            Initialize with sku
+            Initialize with Sku
     #>
     ReportServiceSkuUtils ([System.String] $Sku, [Boolean] $IsLocal)
     {
         $this.Sku = [ReportServiceSku] $Sku
+        $this.IsLocal = [ReportServiceSku] $IsLocal
+    }
+
+    <#
+        .SYNOPSIS
+            Initialize with ISLocal
+    #>
+    ReportServiceSkuUtils ([Boolean] $IsLocal)
+    {
         $this.IsLocal = [ReportServiceSku] $IsLocal
     }
 
@@ -809,7 +818,7 @@ Function Get-ReportServiceSkuUtils
     }
     else
     {
-        return [ReportServiceSkuUtils]::new()
+        return [ReportServiceSkuUtils]::new($IsLocal)
     }
 }
 
