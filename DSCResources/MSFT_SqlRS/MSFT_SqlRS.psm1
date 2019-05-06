@@ -10,18 +10,61 @@ Import-Module -Name (Join-Path -Path $script:resourceHelperModulePath -ChildPath
 $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_ReportServiceSkuUtils.psm1')
-Function Get-TargetResource
+
+$databaseLogonType = @(
+    [PSCustomObject]@{
+        ShortName = 'Service'
+        FullName = 'Service Credentials (Integrated)'
+        Id = 0
+    }
+    [PSCustomObject]@{
+        ShortName = 'SQL'
+        FullName = 'SQL Service Credentials'
+        Id = 1
+    }
+    [PSCustomObject] @{
+        ShortName = 'Windows'
+        FullName = 'Windows Credentials'
+        Id = 2
+    }
+)
+
+$smtpLogonType = @(
+    [PSCustomObject]@{
+        ShortName = 'None'
+        FullName = 'No Authentication'
+        Id = 0
+    }
+    [PSCustomObject]@{
+        ShortName = 'Windows'
+        FullName = 'Username and password (Basic)'
+        Id = 1
+    }
+    [PSCustomObject] @{
+        ShortName = 'Service'
+        FullName = 'Report service service account (NTLM)'
+        Id = 2
+    }
+)
+
+enum ReportServiceInstance
+{
+    PBIRS
+    SSRS
+}
+
+Function Get-TargetResource #Complete
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
     param
     (
-        [Parameter()]
-        [ValidateSet('PBIRS', 'SSRS')]
+        [Parameter(Mandatory)]
+        [ReportServiceInstance]
         $ReportServiceInstanceName
     )
 
-    Write-Verbose -Message ($script:localizedData.GetRSState)
+    Write-Verbose -Message ($script:localizedData.RetrievingRSState)
     $reportingServicesCIMObjects = Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
 
     # Instance object is the actual SSRS/PBIRS Instance. Some information in here that is useful
@@ -29,25 +72,66 @@ Function Get-TargetResource
     # Most of the configuration settings are retrieved from here
     $configurationCIMObject = $reportingServicesCIMObjects.ConfigurationCIM
 
-    # These are the logon types, this gets converted to something that is human readable instead of a number
-    $databaseLogonTypes = @('Windows Login', 'SQL Server Account', 'Current User - Integrated Security')
-    # SMTP authentication types, this gets converted to something that is human readable instead of a number
-    $smtpAuthenticationTypes = @('No Authentication', 'Username and password (Basic)', 'Report service service account (NTLM)')
+    $getTargetResourceResult = [ordered]@{
+        ReportServiceInstanceName         = $ReportServiceInstanceName
 
-    #region Split the Database instance into server name and instance
-    # Probably shouldn't be breaking it up like this
-    $databaseServerName = ($configurationCIMObject.DatabaseServerName).Split('\')
-    if($databaseServerName[1])
-    {
-        $databaseServerInstance = $databaseServerName[1]
-        $databaseServerName = $databaseServerName[0]
+        # Service Account
+        ServiceAccount           = $null
+        ServiceAccountConfigured = $configurationCIMObject.WindowsServiceIdentityConfigured
+        ServiceAccountActual     = $configurationCIMObject.WindowsServiceIdentityActual
+
+        # Report Server manager
+        ReportManagerVirtualDirectory     = $configurationCIMObject.VirtualDirectoryReportManager
+        ReportManagerUrls                 = @()
+        ReportServerInstanceURLs          = @()
+
+        # Report Server Web portal
+        ReportWebPortalVirtualDirectory   = $configurationCIMObject.VirtualDirectoryReportServer
+        ReportWebPortalUrls               = @()
+        ReportServerInstanceWebPortalURLs = @()
+
+        # Report Server Database information
+        DatabaseServerInstance   = $configurationCIMObject.DatabaseServerName
+        DatabaseName             = $configurationCIMObject.DatabaseName
+        ReportDatabaseCredential = $configurationCIMObject.DatabaseLogonAccount
+        ReportDatabaseLoginType  = $null
+
+        # Email Settings
+        EmailSender         = $configurationCIMObject.SenderEmailAddress
+        EmailSMTP           = $configurationCIMObject.SMTPServer
+        EmailAuthentication = $null
+        EmailSMTPCredential = $configurationCIMObject.SendUserName
+        EmailSMTPSSL        = $configurationCIMObject.SMTPUseSSL
+
+        # Execution and FileShare account
+        ExecutionAccount = $configurationCIMObject.UnattendedExecutionAccount
+        FileShareAccount = $configurationCIMObject.FileShareAccount
+
+        # Additional information
+        EditionName            = $instanceCIMObject.EditionName
+        ScaleOutServers        = @()
+        IsInitialized          = $configurationCIMObject.IsInitialized
+        Version                = $instanceCIMObject.Version
+        InstallationID         = $configurationCIMObject.InstallationID
+        ReportServerConfigPath = $configurationCIMObject.PathName
+        ServiceName            = $configurationCIMObject.ServiceName
     }
-    else
-    {
-        $databaseServerInstance = 'MSSQLSERVER'
-        $databaseServerName = $databaseServerName[0]
+
+    #region Convert Report Database Logon Type from int to shortname
+    $reportDatabaseLoginType = $databaseLogonType | Where-Object -Filter {
+        $_.Id -eq $configurationCIMObject.DatabaseLogonType
     }
-    #endregion Split the Database instance into server name and instance
+
+    $getTargetResourceResult['ReportDatabaseLoginType'] = $reportDatabaseLoginType.ShortName
+    #endregion Convert Report Database Logon Type from int to shortname
+
+    #region Convert SMTP Authentication from int to shortname
+    $reportSMTPLoginType = $smtpLogonType | Where-Object -Filter {
+        $_.Id -eq $configurationCIMObject.SMTPAuthenticate
+    }
+
+    $getTargetResourceResult['EmailAuthentication'] = $reportSMTPLoginType.ShortName
+    #endregion Convert SMTP Authentication from int to shortname
 
     #region Convert service account to the keyword this resource uses
     $possibleBuiltinAccounts = @{
@@ -57,25 +141,34 @@ Function Get-TargetResource
         Local   = 'NT AUTHORITY\LocalService'
     }
 
-    $serviceAccount = $configurationCIMObject.WindowsServiceIdentityConfigured
-    $possibleBuiltinAccounts.GetEnumerator() | ForEach-Object {
-        if ($serviceAccount -eq $_.Value)
-        {
-            $serviceAccount = $_.Key
-        }
+    $serviceAccountResult = $possibleBuiltinAccounts.GetEnumerator() | Where-Object -Filter {
+        $_.Value -eq $configurationCIMObject.WindowsServiceIdentityConfigured
     }
+
+    # TODO: Should we check if we get something just in case?
+    $getTargetResourceResult['ServiceAccount'] = $serviceAccountResult.Name
     #endregion Convert service account to the keyword this resource uses
 
-    #region Get and separate Report Server URLs in human readable format
-    try
+    #region Get Report Server Manager and Web Portal Urls
+    # This will retrieve the readable urls which can be used to browse to
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $instanceCIMObject
+        MethodName = 'GetReportServerUrls'
+    }
+
+    Write-Verbose -Message ($script:localizedData.RetrievingInstanceUrls)
+    $reportServerUrlsResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+    if ($reportServerUrlsResult.Error)
     {
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $instanceCIMObject
-            MethodName = 'GetReportServerUrls'
-        }
+        $arguments = Convert-HashtableToArguments $cimReportServicesParameters
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.RetrievingInstanceUrlsSuccess)
 
-        $reportServerUrls = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
+        $reportServerUrls = $reportServerUrlsResult.Result
         # Because GetReportServerUrls returns all urls for all web services, we need to match up
         # which urls belong to ReportServerWebService and ReportServerWebApp
         $reportServeUrlList = @{}
@@ -86,108 +179,67 @@ Function Get-TargetResource
             $url = ($reportServerUrls.URLS)[$i]
             $reportServeUrlList[$application] += @($url)
         }
+
+        $getTargetResourceResult['ReportServerInstanceURLs'] = $reportServeUrlList.ReportServerWebService
+        $getTargetResourceResult['ReportServerInstanceWebPortalURLs'] = $reportServeUrlList.ReportServerWebApp
     }
-    catch
-    {
-        # Report server (Managed not set yet)
+    #endregion Get Report Server Manager Urls
+
+    #region Get Report Server Manager and Web Portal Urls that are modifiable
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $configurationCIMObject
+        MethodName = 'ListReservedURLs'
     }
 
-    #endregion Get and separate Report Server URLs in human readable format
-
-    #region Get and separate Report Server URLs for editing
-    try
+    Write-Verbose -Message ($script:localizedData.RetrievingModifiableUrls)
+    $reportServerUrlsResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+    if ($reportServerUrlsResult.Error)
     {
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $configurationCIMObject
-            MethodName = 'ListReservedURLs'
-        }
+        $arguments = Convert-HashtableToArguments $cimReportServicesParameters
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.RetrievingModifiableUrlsSuccess)
 
-        $reportServerUrlModifiable = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-        # Because ListReservedURLs returns all urls for all web services, we need to match up
+        $reportServerUrls = $reportServerUrlsResult.Result
+        # Because GetReportServerUrls returns all urls for all web services, we need to match up
         # which urls belong to ReportServerWebService and ReportServerWebApp
-        $reportServerUrlModifiableList = @{}
+        $reportServeUrlList = @{}
 
-        for ( $i = 0; $i -lt $reportServerUrlModifiable.Application.Count; ++$i )
+        for ( $i = 0; $i -lt $reportServerUrls.Application.Count; ++$i )
         {
-            $application = ($reportServerUrlModifiable.Application)[$i]
-            $urlString = ($reportServerUrlModifiable.UrlString)[$i]
-            $reportServerUrlModifiableList[$application] += @($urlString)
+            $application = ($reportServerUrls.Application)[$i]
+            $url = ($reportServerUrls.UrlString)[$i]
+            $reportServeUrlList[$application] += @($url)
         }
-    }
-    catch
-    {
-        # Report server front-end urls not set
-    }
 
-    #endregion Get and separate Report Server URLs for editing
+        $getTargetResourceResult['ReportManagerUrls'] = $reportServeUrlList.ReportServerWebService
+        $getTargetResourceResult['ReportWebPortalUrls'] = $reportServeUrlList.ReportServerWebApp
+    }
+    #endregion Get Report Server Manager and Web Portal Urls that are modifiable
 
     #region Get list of servers in cluster
-    try
-    {
-        $scaleOutServersParameters = @{
-            CimInstance = $configurationCIMObject
-            MethodName = 'ListReportServersInDatabase'
-        }
-
-        $scaleOutServers = $(Invoke-RsCimMethod @scaleOutServersParameters).MachineNames
-    }
-    catch
-    {
-        # DB Hasn't been initilized yet
+    $scaleOutServersParameters = @{
+        CimInstance = $configurationCIMObject
+        MethodName = 'ListReportServersInDatabase'
     }
 
+    Write-Verbose -Message ($script:localizedData.RetrievingScaleOutServers)
+    $reportServerUrlsResult = Invoke-RsCimMethod @scaleOutServersParameters
+    if ($reportServerUrlsResult.Error)
+    {
+        $arguments = Convert-HashtableToArguments $cimReportServicesParameters
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.RetrievingScaleOutServersSuccess)
+        $getTargetResourceResult['ScaleOutServers'] =  $scaleOutServersResult.Result.MachineNames
+    }
     #endregion Get list of servers in cluster
-
-    $getTargetResourceResult = [ordered]@{
-        InstanceName           = $instanceCIMObject.InstanceName
-        Version                = $instanceCIMObject.Version
-        EditionName            = $instanceCIMObject.EditionName
-        InstallationID         = $configurationCIMObject.InstallationID
-        IsInitialized          = $configurationCIMObject.IsInitialized
-        ReportServerConfigPath = $configurationCIMObject.PathName
-        ServiceName            = $configurationCIMObject.ServiceName
-
-        # Service Account
-        ServiceAccount           = $serviceAccount
-        ServiceAccountConfigured = $configurationCIMObject.WindowsServiceIdentityConfigured
-        ServiceAccountActual     = $configurationCIMObject.WindowsServiceIdentityActual
-
-        # Web Service URL
-        ReportServerVirtualDirectory = $configurationCIMObject.VirtualDirectoryReportServer
-        ReportServerManagerURLs      = $reportServeUrlList.ReportServerWebService
-        ReportServerReservedUrl      = $reportServerUrlModifiableList.ReportServerWebService
-
-        # Database
-        DatabaseServerName   = $databaseServerName
-        DatabaseInstanceName = $databaseServerInstance
-        DatabaseName         = $configurationCIMObject.DatabaseName
-        DatabaseLogonAccount = $configurationCIMObject.DatabaseLogonAccount
-        DatabaseLogonType    = $databaseLogonTypes[$configurationCIMObject.DatabaseLogonType]
-
-        # Web Portal URL Front-end for users
-        ReportsVirtualDirectory = $configurationCIMObject.VirtualDirectoryReportManager
-        ReportWebPortalURLs     = $reportServeUrlList.ReportServerWebApp
-        ReportsReservedUrl      = $reportServerUrlModifiableList.ReportServerWebApp
-
-        # Email Settings
-        EmailSender         = $configurationCIMObject.SenderEmailAddress
-        EmailSMTP           = $configurationCIMObject.SMTPServer
-        EmailSMTPSSL        = $configurationCIMObject.SMTPUseSSL
-        EmailAuthentication = $smtpAuthenticationTypes[$configurationCIMObject.SMTPAuthenticate]
-        EmailSMTPUser       = $configurationCIMObject.SendUserName
-
-        # Execution Account
-        ExecutionAccount = $configurationCIMObject.UnattendedExecutionAccount # Service account unattended execution
-
-        # Encryption Keys - Nothing to get from here
-
-        # Subscription Settings
-        FileShareAccount = $configurationCIMObject.FileShareAccount # Service account used for file shares
-
-        # Scale-out Deployment
-        ScaleOutServers  = $scaleOutServers
-    }
 
     return $getTargetResourceResult
 }
@@ -839,7 +891,7 @@ function Get-ReportingServicesCIM #Complete
     }
     else
     {
-        $cimReportServerInstanceObject = $instanceVersionResult.Result
+        $cimReportServerInstanceObject = $cimReportServerInstanceResults.Result
         Write-Verbose -Message ($script:localizedData.RetrievingRSInstanceObjectSuccess)
     }
 
@@ -906,40 +958,27 @@ Function Invoke-RsCimMethod
         ErrorAction = 'Stop'
     }
 
+    $errorResult = $false
+
     if ($PSBoundParameters.ContainsKey('Arguments'))
     {
         $invokeCimMethodParameters['Arguments'] = $Arguments
     }
 
-    $invokeCimMethodResult = $CimInstance | Invoke-CimMethod @invokeCimMethodParameters
-    <#
-        Successfully calling the method returns $invokeCimMethodResult.HRESULT -eq 0.
-        If an general error occur in the Invoke-CimMethod, like calling a method
-        that does not exist, returns $null in $invokeCimMethodResult.
-    #>
-    if ($invokeCimMethodResult -and $invokeCimMethodResult.HRESULT -ne 0)
+    try
     {
-        if ($invokeCimMethodResult | Get-Member -Name 'ExtendedErrors')
-        {
-            <#
-                The returned object property ExtendedErrors is an array
-                so that needs to be concatenated.
-            #>
-            $errorMessage = $invokeCimMethodResult.ExtendedErrors -join ';'
-        }
-        else
-        {
-            $errorMessage = $invokeCimMethodResult.Error
-        }
-        #TODO: create localized string
-        throw 'Method {0}() failed with an error. Error: {1} (HRESULT:{2})' -f @(
-            $MethodName
-            $errorMessage
-            $invokeCimMethodResult.HRESULT
-        )
+        $invokeCimMethodResult = $CimInstance | Invoke-CimMethod @invokeCimMethodParameters
+    }
+    catch
+    {
+        $errorResult = $true
+        $invokeCimMethodResult = $_
     }
 
-    return $invokeCimMethodResult
+    return @{
+        Result = $invokeCimMethodResult
+        Error = $errorResult
+    }
 }
 
 Function Get-RsCimInstance #Complete
@@ -961,6 +1000,7 @@ Function Get-RsCimInstance #Complete
         Class = $Class
         ErrorAction = 'Stop'
     }
+
     $errorResult = $false
 
     if ($PSBoundParameters.ContainsKey('Namespace'))

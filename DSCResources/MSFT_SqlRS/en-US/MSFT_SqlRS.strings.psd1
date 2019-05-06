@@ -20,7 +20,13 @@ ConvertFrom-StringData -StringData @'
     RSandSQLEditionsNotValidLocal = The database installation of reporting services with the sku type of '{0}' requires that the SQL instance be installed on the same node. It appears that you are trying to install reporting services on a remote node.
 
     # Get-TargetResource
-    GetRSState = Attempting to get the Reporting Service state
+    RetrievingRSState = Attempting to get the current Reporting Service state.
+    RetrievingInstanceUrls  = Attempting to get the Reporting Service Instance Url list.
+    RetrievingInstanceUrlsSuccess  = Successfully retrieved the Reporting Service Instance Url list.
+    RetrievingModifiableUrls  = Attempting to get the Reporting Service Modifiable Url list.
+    RetrievingModifiableUrlsSuccess  = Successfully retrieved the Reporting Service Modifiable Url list.
+    RetrievingScaleOutServers  = Attempting to get a list of the Reporting Service Scale-Out servers.
+    RetrievingScaleOutServersSuccess  = Successfully retrieved the list of Reporting Service Scale-Out servers.
 
     # Get-RsCimInstance
     RetrievingRSInstanceNameAuto           = Attempting to retrieve the Reporting Service instance name automatically.

@@ -8,8 +8,7 @@ class MSFT_SqlRS : OMI_BaseResource
     [Write, Default('http://+:80')] String ReportManagerUrls;
     [Write, Default('Reports')] String ReportWebPortalVirtualDirectory;
     [Write, Default('http://+:80')] String ReportWebPortalUrls;
-    [Write, Default("$env:Computername")] String DatabaseServerName;
-    [Write, Default('MSSQLSERVER')] String DatabaseInstanceName;
+    [Write, Default("$env:Computername")] String DatabaseServerInstance;
     [Write, EmbeddedInstance('MSFT_Credential')] String DatabaseCredential;
     [Write, Default('Integrated'), ValidateSet('Integrated', 'Sql')] String DatabaseLoginType;
     [Write, Default('ReportServer')] String DatabaseName;
@@ -30,8 +29,8 @@ class MSFT_SqlRS : OMI_BaseResource
     [Read, Description("Reporting Services configuration file path.")] String ReportServerConfigPath;
     [Read, Description("The current service account that Reporting Services is using.")] String ServiceAccountActual;
     [Read, Description("Whether or not Email is connecting to the SMTP server using SSL.")] String EmailSMTPSSL;
-    [Read, Description("Readable URLs for the Reporting Services manager")] String ReportServerManagerURLs;
-    [Read, Description("Readable URLs for the Reporting Services web portal")] String ReportWebPortalURLs;
+    [Read, Description("Readable URLs for the Reporting Services manager")] String ReportServerInstanceURLs;
+    [Read, Description("Readable URLs for the Reporting Services web portal")] String ReportServerInstanceWebPortalURLs;
 };
 
 <#
