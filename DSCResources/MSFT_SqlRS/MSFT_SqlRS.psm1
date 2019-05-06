@@ -762,8 +762,6 @@ Function Compare-TargetResourceState #Complete
     # Only check parameters that we passed in explicitly
     foreach ($parameter in $PSBoundParameters.Keys)
     {
-        Write-Verbose -Message ($script:localizedData.CheckingParameterState -f $parameter)
-
         $expectedValue = $PSBoundParameters.$parameter
         $actualValue   = $getTargetResourceResult.$parameter
 
@@ -776,6 +774,8 @@ Function Compare-TargetResourceState #Complete
         # Need to check if parameter is part of schema, otherwise ignore all other parameters like verbose
         if ($getTargetResourceResult.Contains($parameter))
         {
+            Write-Verbose -Message ($script:localizedData.CheckingParameterState -f $parameter)
+
             $isOutOfCompliance = $false
             # Check if any of the values are null since compare-object can't compare null values
             if ([String]::IsNullOrEmpty($expectedValue) -or [String]::IsNullOrEmpty($actualValue))
