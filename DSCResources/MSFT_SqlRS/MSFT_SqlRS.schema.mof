@@ -1,6 +1,40 @@
 [ClassVersion("1.0.0.0"), FriendlyName("SqlRS")]
 class MSFT_SqlRS : OMI_BaseResource
 {
+    [Key, ValidateSet('PBIRS', 'SSRS')] String ReportServiceInstanceName;
+    [Write, Only used when Domain ServiceAccountLoginType is specified] String ServiceAccount;
+    [Write, Default('Virtual'), ValidateSet('Virtual', 'Network', 'System', 'Local', 'Windows')] String ServiceAccountLoginType;
+    [Write, Default('ReportServer')] String ReportManagerVirtualDirectory;
+    [Write, Default('http://+:80')] String ReportManagerUrls;
+    [Write, Default('Reports')] String ReportWebPortalVirtualDirectory;
+    [Write, Default('http://+:80')] String ReportWebPortalUrls;
+    [Write, Default("$env:Computername")] String DatabaseServerName;
+    [Write, Default('MSSQLSERVER')] String DatabaseInstanceName;
+    [Write, EmbeddedInstance('MSFT_Credential')] String DatabaseCredential;
+    [Write, Default('Integrated'), ValidateSet('Integrated', 'Sql')] String DatabaseLoginType;
+    [Write, Default('ReportServer')] String DatabaseName;
+    [Write, User account used to grant access to the report server database. EmbeddedInstance('MSFT_Credential')] String ReportDatabaseCredential;
+    [Write, Default('Service'), ValidateSet('Service', 'Sql', 'Windows'] String ReportDatabaseUserLoginType;
+    [Write, Used to check if ReportDatabaseUserLoginType is Service, but database is remote. The report server will not work if using service account and the database is remote. This will only work if the Database and RS are installed on the same server. Default($false)] String UseServiceWithRemoteDatabase;
+    [Write, ] String EmailSender;
+    [Write, ] String EmailSMTP;
+    [Write, ValueMap{"None","Basic","Integrated"}, Values{"None","Basic","Integrated"}] String EmailAuthentication ;
+    [Write, "SMTP credentials used to connect to the SMTP server with. This parameter is only used if 'EmailAuthentication' is set to 'Basic'" EmbeddedInstance("MSFT_Credential")] String EmailSMTPCredential;
+    [Write, EmbeddedInstance("MSFT_Credential")] String ExecutionAccount;
+    [Write, EmbeddedInstance("MSFT_Credential")] String FileShareAccount;
+    [Read, Description("A list of Scale-Out servers used for high availability.")] String[] ScaleOutServers;
+    [Read, Description("Is the Reporting Services instance initialized. This is used to create the encryption keys. This only needs to be run the first time or when the keys change.")] Boolean IsInitialized;
+    [Read, Description("Reporting Services product version.")] String Version;
+    [Read, Description("Reporting Services edition name.")] String EditionName;
+    [Read, Description("Reporting Services installation ID.")] String InstallationID;
+    [Read, Description("Reporting Services configuration file path.")] String ReportServerConfigPath;
+    [Read, Description("The current service account that Reporting Services is using.")] String ServiceAccountActual;
+    [Read, Description("Whether or not Email is connecting to the SMTP server using SSL.")] String EmailSMTPSSL;
+    [Read, Description("Readable URLs for the Reporting Services manager")] String ReportServerManagerURLs;
+    [Read, Description("Readable URLs for the Reporting Services web portal")] String ReportWebPortalURLs;
+};
+
+<#
     [Key, Description("Name of the SQL Server Reporting Services instance to be configured.")] String InstanceName;
     [Required, Description("Name of the SQL Server to host the Reporting Service database.")] String DatabaseServerName;
     [Required, Description("Name of the SQL Server instance to host the Reporting Service database.")] String DatabaseInstanceName;
@@ -31,4 +65,4 @@ class MSFT_SqlRS : OMI_BaseResource
     [Read, Description("Readable URLs for the Reporting Services manager")] String ReportServerManagerURLs;
     [Read, Description("Readable URLs for the Reporting Services web portal")] String ReportWebPortalURLs;
     [Read, Description("The name of the Reporting Services database.")] String DatabaseName;
-};
+#>
