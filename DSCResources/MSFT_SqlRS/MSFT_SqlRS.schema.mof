@@ -3,17 +3,17 @@ class MSFT_SqlRS : OMI_BaseResource
 {
     [Key, ValidateSet('PBIRS', 'SSRS')] String ReportServiceInstanceName;
     [Write, Only used when Domain ServiceAccountLoginType is specified] String ServiceAccount;
-    [Write, Default('Virtual'), ValidateSet('Virtual', 'Network', 'System', 'Local', 'Windows')] String ServiceAccountLoginType;
+    [Write, Default('Virtual'), ValidateSet('Virtual', 'Network', 'System', 'Local', 'Windows')] String ServiceAccountLogonType;
     [Write, Default('ReportServer')] String ReportManagerVirtualDirectory;
     [Write, Default('http://+:80')] String ReportManagerUrls;
     [Write, Default('Reports')] String ReportWebPortalVirtualDirectory;
     [Write, Default('http://+:80')] String ReportWebPortalUrls;
     [Write, Default("$env:Computername")] String DatabaseServerInstance;
-    [Write, EmbeddedInstance('MSFT_Credential')] String DatabaseCredential;
-    [Write, Default('Integrated'), ValidateSet('Integrated', 'Sql')] String DatabaseLoginType;
+    [Write, EmbeddedInstance('MSFT_Credential')] String DatabaseConnectCredential;
+    [Write, Default('Integrated'), ValidateSet('Integrated', 'Sql')] String DatabaseConnectLogonType;
     [Write, Default('ReportServer')] String DatabaseName;
     [Write, User account used to grant access to the report server database. EmbeddedInstance('MSFT_Credential')] String ReportDatabaseCredential;
-    [Write, Default('Service'), ValidateSet('Service', 'Sql', 'Windows'] String ReportDatabaseLoginType;
+    [Write, Default('Service'), ValidateSet('Service', 'Sql', 'Windows'] String ReportDatabaseLogonType;
     [Write, Used to check if ReportDatabaseUserLoginType is Service, but database is remote. The report server will not work if using service account and the database is remote. This will only work if the Database and RS are installed on the same server. Default($false)] String UseServiceWithRemoteDatabase;
     [Write, ] String EmailSender;
     [Write, ] String EmailSMTP;

@@ -10,6 +10,7 @@ Import-Module -Name (Join-Path -Path $script:resourceHelperModulePath -ChildPath
 $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_ReportServiceSkuUtils.psm1')
+Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_SqlRSEnums.psm1')
 
 enum ReportServiceInstance
 {
@@ -24,14 +25,14 @@ enum EmailAuthenticationType
     Service
 }
 
-enum ReportDatabaseLoginType
+enum ReportDatabaseLogonType
 {
     Service
     SQL
     Windows
 }
 
-enum DatabaseConnectLoginType
+enum DatabaseConnectLogonType
 {
     Integrated
     SQL
@@ -46,20 +47,19 @@ enum ReportServiceAccount
     Windows
 }
 
-
 $databaseLogonType = @(
     [PSCustomObject]@{
-        ShortName = [ReportDatabaseLoginType]::Service
+        ShortName = [ReportDatabaseLogonType]::Service
         FullName = 'Service Credentials (Integrated)'
         Id = 0
     }
     [PSCustomObject]@{
-        ShortName = [ReportDatabaseLoginType]::SQL
+        ShortName = [ReportDatabaseLogonType]::SQL
         FullName = 'SQL Service Credentials'
         Id = 1
     }
     [PSCustomObject] @{
-        ShortName = [ReportDatabaseLoginType]::Windows
+        ShortName = [ReportDatabaseLogonType]::Windows
         FullName = 'Windows Credentials'
         Id = 2
     }
@@ -83,7 +83,8 @@ $smtpLogonType = @(
     }
 )
 
-Function Get-TargetResource #TODO
+
+Function Get-TargetResource #Complete
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
@@ -107,6 +108,7 @@ Function Get-TargetResource #TODO
 
         # Service Account
         ServiceAccount           = $null
+        ServiceAccountLogonType  = $null
         ServiceAccountConfigured = $configurationCIMObject.WindowsServiceIdentityConfigured
         ServiceAccountActual     = $configurationCIMObject.WindowsServiceIdentityActual
 
@@ -124,7 +126,7 @@ Function Get-TargetResource #TODO
         DatabaseServerInstance   = $configurationCIMObject.DatabaseServerName
         DatabaseName             = $configurationCIMObject.DatabaseName
         ReportDatabaseCredential = $configurationCIMObject.DatabaseLogonAccount
-        ReportDatabaseLoginType  = $null
+        ReportDatabaseLogonType  = $null
 
         # Email Settings
         EmailSender         = $configurationCIMObject.SenderEmailAddress
@@ -148,11 +150,11 @@ Function Get-TargetResource #TODO
     }
 
     #region Convert Report Database Logon Type from int to shortname
-    $reportDatabaseLoginType = $databaseLogonType | Where-Object -Filter {
+    $reportDatabaseLogonType = $databaseLogonType | Where-Object -Filter {
         $_.Id -eq $configurationCIMObject.DatabaseLogonType
     }
 
-    $getTargetResourceResult['ReportDatabaseLoginType'] = $reportDatabaseLoginType.ShortName
+    $getTargetResourceResult['ReportDatabaseLogonType'] = $reportDatabaseLogonType.ShortName
     #endregion Convert Report Database Logon Type from int to shortname
 
     #region Convert SMTP Authentication from int to shortname
@@ -165,19 +167,41 @@ Function Get-TargetResource #TODO
 
     #region Convert service account to the keyword this resource uses
     $possibleBuiltinAccounts = @{
-        Virtual = 'NT Service\{0}' -f $configurationCIMObject.ServiceName
-        Network = 'NT AUTHORITY\NetworkService'
-        System  = 'NT AUTHORITY\SYSTEM'
-        Local   = 'NT AUTHORITY\LocalService'
+        [ReportServiceAccount]::Virtual = 'NT Service\{0}' -f $configurationCIMObject.ServiceName
+        [ReportServiceAccount]::Network = 'NT AUTHORITY\NetworkService'
+        [ReportServiceAccount]::System  = 'NT AUTHORITY\SYSTEM'
+        [ReportServiceAccount]::Local   = 'NT AUTHORITY\LocalService'
     }
-    #TODO:Add in domain account
 
     $serviceAccountResult = $possibleBuiltinAccounts.GetEnumerator() | Where-Object -Filter {
         $_.Value -eq $configurationCIMObject.WindowsServiceIdentityConfigured
     }
 
-    # TODO: Should we check if we get something just in case?
-    $getTargetResourceResult['ServiceAccount'] = $serviceAccountResult.Name
+    # If we don't find the account, then we just set it to a windows account
+    # This should be fine, since we are just trying to make it easier when
+    # assigning an account instead. All other accounts are windows accounts
+    # unless we later define it in [ReportServiceAccount]
+    if (-not $serviceAccountResult)
+    {
+        $getTargetResourceResult['ServiceAccount'] = $configurationCIMObject.WindowsServiceIdentityConfigured
+        $getTargetResourceResult['ServiceAccountLogonType'] = [ReportServiceAccount]::Windows
+        Write-Verbose -Message (
+            $script:localizedData.RetrivedServiceAccount -f
+                $configurationCIMObject.WindowsServiceIdentityConfigured,
+                [ReportServiceAccount]::Windows
+        )
+    }
+    else
+    {
+        $getTargetResourceResult['ServiceAccount'] = $configurationCIMObject.WindowsServiceIdentityConfigured
+        $getTargetResourceResult['ServiceAccountLogonType'] = $serviceAccountResult.Name
+        Write-Verbose -Message (
+            $script:localizedData.RetrivedServiceAccount -f
+                $serviceAccountResult.Value,
+                $serviceAccountResult.Name
+        )
+    }
+
     #endregion Convert service account to the keyword this resource uses
 
     #region Get Report Server Manager and Web Portal Urls
@@ -192,7 +216,7 @@ Function Get-TargetResource #TODO
     if ($reportServerUrlsResult.Error)
     {
         $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 1)
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
     }
     else
@@ -227,7 +251,7 @@ Function Get-TargetResource #TODO
     if ($reportServerUrlsResult.Error)
     {
         $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 1)
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
     }
     else
@@ -262,7 +286,9 @@ Function Get-TargetResource #TODO
     if ($reportServerUrlsResult.Error)
     {
         $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f (
+            "Get-CimInstance $arguments", 1
+        )
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
     }
     else
@@ -563,107 +589,13 @@ Function Set-TargetResource
     #endregion Check if database is in compliance
 }
 
-Function Test-TargetResource
+Function Test-TargetResource #TODO: Add remaining parameters
 {
     [CmdletBinding()]
     param
     (
         [Parameter(Mandatory = $true)]
-        [System.String]
-        $InstanceName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseServerName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseInstanceName,
-
-        [Parameter()]
-        [System.String]
-        $DatabaseAuthentication,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $DatabaseSQLCredential,
-
-        [Parameter()]
-        [System.String]
-        $ServiceAccount,
-
-        [Parameter()]
-        [System.String]
-        $ReportServerVirtualDirectory,
-
-        [Parameter()]
-        [System.String[]]
-        $ReportServerReservedUrl,
-
-        [Parameter()]
-        [System.String]
-        $ReportsVirtualDirectory,
-
-        [Parameter()]
-        [System.String[]]
-        $ReportsReservedUrl,
-
-        [Parameter()]
-        [System.String]
-        $EmailSender,
-
-        [Parameter()]
-        [System.String]
-        $EmailSMTP,
-
-        [Parameter()]
-        [ValidateSet('None','Basic','Integrated')]
-        [System.String]
-        $EmailAuthentication,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $EmailSMTPUser,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $ExecutionAccount,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $FileShareAccount,
-
-        [Parameter()]
-        [System.Boolean]
-        $UseSsl
-    )
-
-    $compareTargetResourceNonCompliant = Compare-TargetResourceState @PSBoundParameters | Where-Object {$_.Pass -eq $false}
-
-    $compareTargetResourceNonCompliant | ForEach-Object {
-        Write-Verbose -Message ($LocalizedData.NotDesiredPropertyState -f `
-            $_.Parameter, $_.Expected, $_.Actual)
-    }
-
-    if ($compareTargetResourceNonCompliant)
-    {
-        Write-Verbose -Message ($LocalizedData.RSNotInDesiredState -f $InstanceName)
-        return $false
-    }
-    else
-    {
-        Write-Verbose -Message ($LocalizedData.RSInDesiredState -f $InstanceName)
-        return $true
-    }
-}
-
-Function Compare-TargetResourceState
-{
-    [CmdletBinding()]
-    param
-    (
-        [Parameter(Mandatory = $true)]
-        [ReportServiceInstanceName]
+        [ReportServiceInstance]
         $ReportServiceInstanceName,
 
         [Parameter()]
@@ -672,7 +604,7 @@ Function Compare-TargetResourceState
 
         [Parameter()]
         [ReportServiceAccount]
-        $ServiceAccountLoginType,
+        $ServiceAccountLogonType,
 
         [Parameter()]
         [System.String]
@@ -695,14 +627,6 @@ Function Compare-TargetResourceState
         $DatabaseServerInstance,
 
         [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $DatabaseCredential,
-
-        [Parameter()]
-        [DatabaseConnectLoginType]
-        $DatabaseLoginType,
-
-        [Parameter()]
         [System.String]
         $DatabaseName,
 
@@ -711,8 +635,8 @@ Function Compare-TargetResourceState
         $ReportDatabaseCredential,
 
         [Parameter()]
-        [ReportDatabaseLoginType]
-        $ReportDatabaseLoginType,
+        [ReportDatabaseLogonType]
+        $ReportDatabaseLogonType,
 
         [Parameter()]
         [System.String]
@@ -739,23 +663,115 @@ Function Compare-TargetResourceState
         $FileShareAccount
     )
 
-    $parametersToCompare = @{} + $PSBoundParameters
-    $getTargetResourceResult = Get-TargetResource
+    Write-Verbose -Message ($LocalizedData.TestingDesiredState -f $ReportServiceInstanceName)
+
+    $compareTargetResourceNonCompliant = Compare-TargetResourceState @PSBoundParameters | Where-Object {
+        $_.Pass -eq $false
+    }
+
+    if ($compareTargetResourceNonCompliant)
+    {
+        Write-Verbose -Message ($LocalizedData.RSNotInDesiredState -f $ReportServiceInstanceName)
+        return $false
+    }
+    else
+    {
+        Write-Verbose -Message ($LocalizedData.RSInDesiredState -f $ReportServiceInstanceName)
+        return $true
+    }
+}
+
+Function Compare-TargetResourceState #Complete
+{
+    [CmdletBinding()]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ServiceAccount,
+
+        [Parameter()]
+        [ReportServiceAccount]
+        $ServiceAccountLogonType,
+
+        [Parameter()]
+        [System.String]
+        $ReportManagerVirtualDirectory,
+
+        [Parameter()]
+        [System.String[]]
+        $ReportManagerUrls,
+
+        [Parameter()]
+        [System.String]
+        $ReportWebPortalVirtualDirectory,
+
+        [Parameter()]
+        [System.String[]]
+        $ReportWebPortalUrls,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseServerInstance,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseName,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ReportDatabaseCredential,
+
+        [Parameter()]
+        [ReportDatabaseLogonType]
+        $ReportDatabaseLogonType,
+
+        [Parameter()]
+        [System.String]
+        $EmailSender,
+
+        [Parameter()]
+        [System.String]
+        $EmailSMTP,
+
+        [Parameter()]
+        [EmailAuthenticationType]
+        $EmailAuthentication,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $EmailSMTPCredential,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ExecutionAccount,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $FileShareAccount
+    )
+
+    Write-Verbose -Message ($LocalizedData.ComparingSpecifiedParameters -f $ReportServiceInstanceName)
+
+    $getTargetResourceResult = Get-TargetResource -ReportServiceInstanceName $ReportServiceInstanceName
     $compareTargetResource = @()
 
-    # Need to add these parameters for set
-    $parametersToCompare['ServiceName'] = $getTargetResourceResult.ServiceName
-
     # Only check parameters that we passed in explicitly
-    foreach ($parameter in $parametersToCompare.Keys)
+    foreach ($parameter in $PSBoundParameters.Keys)
     {
-        $expectedValue = $parametersToCompare.$parameter
+        Write-Verbose -Message ($script:localizedData.CheckingParameterState -f $parameter)
+
+        $expectedValue = $PSBoundParameters.$parameter
         $actualValue   = $getTargetResourceResult.$parameter
 
         # We only need the username from credentials to compare
         if ($expectedValue -is [PSCredential])
         {
-            $expectedValue = $parametersToCompare.$parameter.UserName
+            $expectedValue = $PSBoundParameters.$parameter.UserName
         }
 
         # Need to check if parameter is part of schema, otherwise ignore all other parameters like verbose
@@ -780,9 +796,24 @@ Function Compare-TargetResourceState
                 }
             }
 
-            Write-Host $parameter ":" $isOutOfCompliance
+
+            $expectedValueToString = $expectedValue
+            $actualValueToString = $actualValue
+            if($expectedValueToString -is [System.String[]])
+            {
+                $expectedValueToString = '[{0}]' -f ($expectedValue -join ', ')
+                $actualValueToString = '[{0}]' -f ($actualValue -join ', ')
+            }
+
             if($isOutOfCompliance)
             {
+                Write-Verbose -Message (
+                    $script:localizedData.ParameterNotInDesiredState -f
+                        $parameter,
+                        $expectedValueToString,
+                        $actualValueToString
+                )
+
                 $compareTargetResource += [pscustomobject] @{
                     Parameter = $parameter
                     Expected  = $expectedValue
@@ -792,6 +823,13 @@ Function Compare-TargetResourceState
             }
             else
             {
+                Write-Verbose -Message (
+                    $script:localizedData.ParameterInDesiredState -f
+                        $parameter,
+                        $expectedValueToString,
+                        $actualValueToString
+                )
+
                 $compareTargetResource += [pscustomobject] @{
                     Parameter = $parameter
                     Expected  = $expectedValue
@@ -864,7 +902,7 @@ function Get-ReportingServicesCIM #Complete
         if ($instanceNameResult.Error)
         {
             $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-            $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+            $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 9)
             New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
         }
         else
@@ -879,7 +917,7 @@ function Get-ReportingServicesCIM #Complete
         Write-Verbose -Message ($script:localizedData.SetRSInstanceName -f $instanceName)
     }
 
-    #    We we try and get the instanceName automatically, it will return an empty string
+    #    We try and get the instanceName automatically, it will return an empty string
     #    if it doesn't exist
 
     if ([String]::IsNullOrEmpty($instanceName) -and -not $PSBoundParameters.ContainsKey('ReportServiceInstanceName'))
@@ -900,7 +938,7 @@ function Get-ReportingServicesCIM #Complete
         if ($instanceNameResult.Error)
         {
             $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-            $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+            $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 9)
             New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
         }
         else
@@ -924,7 +962,7 @@ function Get-ReportingServicesCIM #Complete
     if ($cimReportServerInstanceResults.Error)
     {
         $arguments = Convert-HashtableToArguments $cimReportServerInstanceResults
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 9)
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($cimReportServerInstanceResults.Result)
     }
     else
@@ -943,7 +981,7 @@ function Get-ReportingServicesCIM #Complete
     if ($cimReportServerConfigurationResults.Error)
     {
         $arguments = Convert-HashtableToArguments $cimReportServerConfigurationResults
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 9)
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($cimReportServerConfigurationResults.Result)
     }
     else
@@ -1241,4 +1279,4 @@ Function Test-NewSQLInstanceSku
     }
 }
 
-Export-ModuleMember -Function *-TargetResource
+Export-ModuleMember -Function *-TargetResource*
