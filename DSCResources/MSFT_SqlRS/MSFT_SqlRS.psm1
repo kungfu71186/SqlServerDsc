@@ -10,7 +10,6 @@ Import-Module -Name (Join-Path -Path $script:resourceHelperModulePath -ChildPath
 $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_ReportServiceSkuUtils.psm1')
-Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_SqlRSEnums.psm1')
 
 enum ReportServiceInstance
 {
