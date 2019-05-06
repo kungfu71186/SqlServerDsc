@@ -3,3 +3,5 @@ DSCResource.Tests
 .vs
 .vscode
 node_modules
+settings.json
+analyzersettings.psd1
