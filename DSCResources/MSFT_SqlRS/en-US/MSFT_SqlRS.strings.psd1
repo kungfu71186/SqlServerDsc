@@ -2,7 +2,8 @@ ConvertFrom-StringData -StringData @'
     # Multiple (SRS{n}000) - These messages can be used for all areas in the script.
     # The 1000's decimal will say where the error came from [get (1),set (2),test (3), compare (4)]
     IssueRetrievingCIMInstance = There was an issue when trying to retrieve the CIM instance. This shouldn't have happened. For further diganostics, please ensure that the following command can run `{0}`. (SRS{1}001)
-    IssueRetrievingRSInstance = There was an issue when trying to retrieve the Reporting Services instance name. This is probably due to the fact that Reporting Services may not be installed. (SRS{1}002)
+    IssueRetrievingRSInstance  = There was an issue when trying to retrieve the Reporting Services instance name. This is probably due to the fact that Reporting Services may not be installed. (SRS{1}002)
+    IssueRetrievingRSVersion   = There was an issue when trying to retrieve the Reporting Services version. This is probably due to the fact that the 'ReportServiceInstanceName' name of '{0}' is incorrect. (SRS{1}003)
 
     # Get-TargetResource (SRS0100)
     RetrievingRSState                = Attempting to get the current Reporting Service state. (SRS0100)

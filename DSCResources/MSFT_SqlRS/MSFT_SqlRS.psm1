@@ -947,20 +947,26 @@ function Get-ReportingServicesCIM #Complete
         }
     }
 
-    # We have InstanceName and we were able to get the instance version
-    # we can now get the settings even if they are not set yet
+    if ([String]::IsNullOrEmpty($instanceVersion))
+    {
+        # Reporting Services is probably installe, but it's the wrong instance
+        New-InvalidResultException -Message (
+            $script:localizedData.IssueRetrievingRSVersion -f $ReportServiceInstanceName, 9
+        )
+    }
 
     Write-Verbose -Message ($script:localizedData.RetrievingRSInstanceObject)
     $cimMSReportServerInstance = @{
         Namespace   = '{0}\{1}\{2}' -f $rootReportServerNameSpace, $instanceName, $instanceVersion
         Class       = 'MSReportServer_Instance'
     }
+    write-host $cimMSReportServerInstance.Values
 
     $cimReportServerInstanceResults = Get-RsCimInstance @cimMSReportServerInstance
 
     if ($cimReportServerInstanceResults.Error)
     {
-        $arguments = Convert-HashtableToArguments $cimReportServerInstanceResults
+        $arguments = Convert-HashtableToArguments $cimMSReportServerInstance
         $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 9)
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($cimReportServerInstanceResults.Result)
     }
@@ -979,7 +985,7 @@ function Get-ReportingServicesCIM #Complete
     $cimReportServerConfigurationResults = Get-RsCimInstance @cimMSReportServerConfigurationSetting
     if ($cimReportServerConfigurationResults.Error)
     {
-        $arguments = Convert-HashtableToArguments $cimReportServerConfigurationResults
+        $arguments = Convert-HashtableToArguments $cimMSReportServerConfigurationSetting
         $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 9)
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($cimReportServerConfigurationResults.Result)
     }
