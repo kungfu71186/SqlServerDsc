@@ -13,7 +13,7 @@ class MSFT_SqlRS : OMI_BaseResource
     [Write, Default('Integrated'), ValidateSet('Integrated', 'Sql')] String DatabaseLoginType;
     [Write, Default('ReportServer')] String DatabaseName;
     [Write, User account used to grant access to the report server database. EmbeddedInstance('MSFT_Credential')] String ReportDatabaseCredential;
-    [Write, Default('Service'), ValidateSet('Service', 'Sql', 'Windows'] String ReportDatabaseUserLoginType;
+    [Write, Default('Service'), ValidateSet('Service', 'Sql', 'Windows'] String ReportDatabaseLoginType;
     [Write, Used to check if ReportDatabaseUserLoginType is Service, but database is remote. The report server will not work if using service account and the database is remote. This will only work if the Database and RS are installed on the same server. Default($false)] String UseServiceWithRemoteDatabase;
     [Write, ] String EmailSender;
     [Write, ] String EmailSMTP;

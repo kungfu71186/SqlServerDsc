@@ -11,19 +11,55 @@ $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_ReportServiceSkuUtils.psm1')
 
+enum ReportServiceInstance
+{
+    PBIRS
+    SSRS
+}
+
+enum EmailAuthenticationType
+{
+    None
+    Windows
+    Service
+}
+
+enum ReportDatabaseLoginType
+{
+    Service
+    SQL
+    Windows
+}
+
+enum DatabaseConnectLoginType
+{
+    Integrated
+    SQL
+}
+
+enum ReportServiceAccount
+{
+    Virtual
+    Network
+    System
+    Local
+    Windows
+}
+
+
 $databaseLogonType = @(
     [PSCustomObject]@{
-        ShortName = 'Service'
+        ShortName = [ReportDatabaseLoginType]::Service
         FullName = 'Service Credentials (Integrated)'
         Id = 0
     }
     [PSCustomObject]@{
-        ShortName = 'SQL'
+        ShortName = [ReportDatabaseLoginType]::SQL
         FullName = 'SQL Service Credentials'
         Id = 1
     }
     [PSCustomObject] @{
-        ShortName = 'Windows'
+        ShortName = [ReportDatabaseLoginType]::Windows
         FullName = 'Windows Credentials'
         Id = 2
     }
@@ -31,29 +67,23 @@ $databaseLogonType = @(
 
 $smtpLogonType = @(
     [PSCustomObject]@{
-        ShortName = 'None'
+        ShortName = [EmailAuthenticationType]::None
         FullName = 'No Authentication'
         Id = 0
     }
     [PSCustomObject]@{
-        ShortName = 'Windows'
+        ShortName = [EmailAuthenticationType]::Windows
         FullName = 'Username and password (Basic)'
         Id = 1
     }
     [PSCustomObject] @{
-        ShortName = 'Service'
+        ShortName = [EmailAuthenticationType]::Service
         FullName = 'Report service service account (NTLM)'
         Id = 2
     }
 )
 
-enum ReportServiceInstance
-{
-    PBIRS
-    SSRS
-}
-
-Function Get-TargetResource #Complete
+Function Get-TargetResource #TODO
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
@@ -140,6 +170,7 @@ Function Get-TargetResource #Complete
         System  = 'NT AUTHORITY\SYSTEM'
         Local   = 'NT AUTHORITY\LocalService'
     }
+    #TODO:Add in domain account
 
     $serviceAccountResult = $possibleBuiltinAccounts.GetEnumerator() | Where-Object -Filter {
         $_.Value -eq $configurationCIMObject.WindowsServiceIdentityConfigured
@@ -331,9 +362,9 @@ Function Set-TargetResource
         [System.Int]
         $LCID = (Get-Culture).LCID
     )
-<#
-Connect to database user is different than the granted rights user
-#>
+    <#
+    Connect to database user is different than the granted rights user
+    #>
     <#
       This script follows the same process the SSRS/PBIRS GUI installation uses
       ========== Required ===========
@@ -632,44 +663,56 @@ Function Compare-TargetResourceState
     param
     (
         [Parameter(Mandatory = $true)]
-        [System.String]
-        $InstanceName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseServerName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseInstanceName,
-
-        [Parameter()]
-        [System.String]
-        $DatabaseAuthentication,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $DatabaseSQLCredential,
+        [ReportServiceInstanceName]
+        $ReportServiceInstanceName,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
         $ServiceAccount,
 
         [Parameter()]
-        [System.String]
-        $ReportServerVirtualDirectory,
-
-        [Parameter()]
-        [System.String[]]
-        $ReportServerReservedUrl,
+        [ReportServiceAccount]
+        $ServiceAccountLoginType,
 
         [Parameter()]
         [System.String]
-        $ReportsVirtualDirectory,
+        $ReportManagerVirtualDirectory,
 
         [Parameter()]
         [System.String[]]
-        $ReportsReservedUrl,
+        $ReportManagerUrls,
+
+        [Parameter()]
+        [System.String]
+        $ReportWebPortalVirtualDirectory,
+
+        [Parameter()]
+        [System.String[]]
+        $ReportWebPortalUrls,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseServerInstance,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $DatabaseCredential,
+
+        [Parameter()]
+        [DatabaseConnectLoginType]
+        $DatabaseLoginType,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseName,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ReportDatabaseCredential,
+
+        [Parameter()]
+        [ReportDatabaseLoginType]
+        $ReportDatabaseLoginType,
 
         [Parameter()]
         [System.String]
@@ -680,13 +723,12 @@ Function Compare-TargetResourceState
         $EmailSMTP,
 
         [Parameter()]
-        [ValidateSet('None','Basic','Integrated')]
-        [System.String]
+        [EmailAuthenticationType]
         $EmailAuthentication,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $EmailSMTPUser,
+        $EmailSMTPCredential,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
@@ -694,11 +736,7 @@ Function Compare-TargetResourceState
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $FileShareAccount,
-
-        [Parameter()]
-        [System.Boolean]
-        $UseSsl
+        $FileShareAccount
     )
 
     $parametersToCompare = @{} + $PSBoundParameters
@@ -920,20 +958,7 @@ function Get-ReportingServicesCIM #Complete
     }
 }
 
-<#
-    .SYNOPSIS
-        A wrapper for Invoke-CimMethod to be able to handle errors in one place.
-
-    .PARAMETER CimInstance
-        The CIM instance object that contains the method to call.
-
-    .PARAMETER MethodName
-        The method to call in the CIM Instance object.
-
-    .PARAMETER Arguments
-        The arguments that should be
-#>
-Function Invoke-RsCimMethod
+Function Invoke-RsCimMethod #Complete
 {
     [CmdletBinding()]
     [OutputType([Microsoft.Management.Infrastructure.CimMethodResult])]
@@ -1086,6 +1111,7 @@ Function New-SQLServerConnection
 
     return $databaseServerSQLInstance
 }
+
 Function Get-SQLServerEdition
 {
     [CmdletBinding()]
