@@ -10,21 +10,21 @@ Import-Module -Name (Join-Path -Path $script:resourceHelperModulePath -ChildPath
 $script:localizedData = Get-LocalizedData -ResourceName 'MSFT_SqlRS'
 
 Import-Module -Name (Join-Path -Path $PSScriptRoot -ChildPath 'MSFT_ReportServiceSkuUtils.psm1')
-
-<#
-    .SYNOPSIS
-        Gets the SQL Reporting Services configuration.
-#>
 Function Get-TargetResource
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
     param
     (
+        [Parameter()]
+        [ValidateSet('PBIRS', 'SSRS')]
+        $ReportServiceInstanceName
     )
 
+    Write-Verbose -Message ($script:localizedData.GetRSState)
+
     # Retrieve both CIM objects
-    $reportingServicesCIMObjects = Get-ReportingServicesCIM
+    $reportingServicesCIMObjects = Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
 
     # Instance object is the actual SSRS/PBIRS Instance. Some information in here that is useful
     $instanceCIMObject      = $reportingServicesCIMObjects.InstanceCIM
@@ -194,80 +194,6 @@ Function Get-TargetResource
     return $getTargetResourceResult
 }
 
-<#
-    .SYNOPSIS
-        Initializes SQL Reporting Services.
-
-    .PARAMETER InstanceName
-        Name of the SQL Server Reporting Services instance to be configured.
-
-    .PARAMETER DatabaseServerName
-        Name of the SQL Server to host the Reporting Service database.
-
-    .PARAMETER DatabaseInstanceName
-        Name of the SQL Server instance to host the Reporting Service database.
-
-    .PARAMETER ReportServerVirtualDirectory
-        Report Server Web Service virtual directory. Optional.
-
-    .PARAMETER ReportsVirtualDirectory
-        Report Manager/Report Web App virtual directory name. Optional.
-
-    .PARAMETER ReportServerReservedUrl
-        Report Server URL reservations. Optional. If not specified,
-        'http://+:80' URL reservation will be used.
-
-    .PARAMETER ReportsReservedUrl
-        Report Manager/Report Web App URL reservations. Optional.
-        If not specified, 'http://+:80' URL reservation will be used.
-
-    .PARAMETER UseSsl
-        If connections to the Reporting Services must use SSL. If this
-        parameter is not assigned a value, the default is that Reporting
-        Services does not use SSL.
-
-    .PARAMETER SuppressRestart
-        Reporting Services need to be restarted after initialization or
-        settings change. If this parameter is set to $true, Reporting Services
-        will not be restarted, even after initialisation.
-
-    .NOTES
-        To find out the parameter names for the methods in the class
-        MSReportServer_ConfigurationSetting it's easy to list them using the
-        following code. Example for listing
-
-        ```
-        $methodName = 'ReserveUrl'
-        $instanceName = 'SQL2016'
-        $sqlMajorVersion = '13'
-        $getCimClassParameters = @{
-            ClassName = 'MSReportServer_ConfigurationSetting'
-            Namespace = "root\Microsoft\SQLServer\ReportServer\RS_$instanceName\v$sqlMajorVersion\Admin"
-        }
-        (Get-CimClass @getCimClassParameters).CimClassMethods[$methodName].Parameters
-        ```
-
-        Or run the following using the helper function in this code. Make sure
-        to have the helper function loaded in the session.
-
-        ```
-        $methodName = 'ReserveUrl'
-        $instanceName = 'SQL2016'
-        $reportingServicesData = Get-ReportingServicesData -InstanceName $InstanceName
-        $reportingServicesData.Configuration.CimClass.CimClassMethods[$methodName].Parameters
-        ```
-
-        SecureConnectionLevel (the parameter UseSsl):
-        The SecureConnectionLevel value can be 0,1,2 or 3, but since
-        SQL Server 2008 R2 this was changed. So we are just setting it to 0 (off)
-        and 1 (on).
-
-        "In SQL Server 2008 R2, SecureConnectionLevel is made an on/off
-        switch, default value is 0. For any value greater than or equal
-        to 1 passed through SetSecureConnectionLevel method API, SSL
-        is considered on..."
-        https://docs.microsoft.com/en-us/sql/reporting-services/wmi-provider-library-reference/configurationsetting-method-setsecureconnectionlevel
-#>
 Function Set-TargetResource
 {
     [CmdletBinding()]
@@ -556,43 +482,6 @@ Connect to database user is different than the granted rights user
     #endregion Check if database is in compliance
 }
 
-<#
-    .SYNOPSIS
-        Tests the SQL Reporting Services initialization status.
-
-    .PARAMETER InstanceName
-        Name of the SQL Server Reporting Services instance to be configured.
-
-    .PARAMETER DatabaseServerName
-        Name of the SQL Server to host the Reporting Service database.
-
-    .PARAMETER DatabaseInstanceName
-        Name of the SQL Server instance to host the Reporting Service database.
-
-    .PARAMETER ReportServerVirtualDirectory
-        Report Server Web Service virtual directory. Optional.
-
-    .PARAMETER ReportsVirtualDirectory
-        Report Manager/Report Web App virtual directory name. Optional.
-
-    .PARAMETER ReportServerReservedUrl
-        Report Server URL reservations. Optional. If not specified,
-        http://+:80' URL reservation will be used.
-
-    .PARAMETER ReportsReservedUrl
-        Report Manager/Report Web App URL reservations. Optional.
-        If not specified, 'http://+:80' URL reservation will be used.
-
-    .PARAMETER UseSsl
-        If connections to the Reporting Services must use SSL. If this
-        parameter is not assigned a value, the default is that Reporting
-        Services does not use SSL.
-
-    .PARAMETER SuppressRestart
-        Reporting Services need to be restarted after initialization or
-        settings change. If this parameter is set to $true, Reporting Services
-        will not be restarted, even after initialisation.
-#>
 Function Test-TargetResource
 {
     [CmdletBinding()]
@@ -828,13 +717,29 @@ Function Compare-TargetResourceState
     return $compareTargetResource
 }
 
+Function Convert-HashtableToArguments #Complete
+{
+    [CmdletBinding()]
+    [OutputType([System.String])]
+    param
+    (
+        [Parameter(Mandatory)]
+        [System.Collections.Hashtable]
+        $Hashtable
+    )
+
+    $arguments = @()
+    $Hashtable.GetEnumerator() | Foreach-Object {
+        $arguments += "-{0} '{1}'" -f $_.Name, $_.Value
+    }
+
+    return $arguments -join ' '
+}
+
 <#
     .SYNOPSIS
         Returns SQL Reporting Services data: configuration object used to initialize and configure
         SQL Reporting Services and the name of the Reports Web application name (changed in SQL 2016)
-
-    .PARAMETER InstanceName
-        Name of the SQL Server Reporting Services instance for which the data is being retrieved.
 
     .NOTES
         We can use WMI to get and set all values for Reporting services instead of relying on the registry
@@ -845,32 +750,119 @@ Function Compare-TargetResourceState
             Namespace: root\Microsoft\SqlServer\ReportServer\<InstanceName>\v<Version>, Class: MSReportServer_Instance
             Namespace: root\Microsoft\SqlServer\ReportServer\<InstanceName>\v<Version>\Admin, Class: MSReportServer_ConfigurationSetting
 #>
-function Get-ReportingServicesCIM
+function Get-ReportingServicesCIM #Complete
 {
     [CmdletBinding()]
     [OutputType([System.Collections.Hashtable])]
     param
     (
+        [Parameter()]
+        [ValidateSet('PBIRS', 'SSRS')]
+        $ReportServiceInstanceName
     )
-    #TODO: Need a try/get here to verify that RS is actually installed.
 
     $rootReportServerNameSpace = 'ROOT\Microsoft\SqlServer\ReportServer'
-    $instanceName = (Get-CimInstance -Namespace $rootReportServerNameSpace -Class __NameSpace).Name
+    if (-not $PSBoundParameters.ContainsKey('ReportServiceInstanceName'))
+    {
+        Write-Verbose -Message ($script:localizedData.RetrievingRSInstanceNameAuto)
 
-    $rootReportServerInstanceNameSpace = '{0}\{1}' -f $rootReportServerNameSpace, $instanceName
-    $instanceVersion = (Get-CimInstance -Namespace $rootReportServerInstanceNameSpace -Class __NameSpace).Name
+        $cimReportServicesParameters = @{
+            Namespace   = $rootReportServerNameSpace
+            Class       = '__NameSpace'
+        }
 
+        $instanceNameResult = Get-RsCimInstance @cimReportServicesParameters
+
+        if ($instanceNameResult.Error)
+        {
+            $arguments = Convert-HashtableToArguments $cimReportServicesParameters
+            $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+            New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
+        }
+        else
+        {
+            $instanceName = ($instanceNameResult.Result).Name
+            Write-Verbose -Message ($script:localizedData.SetRSInstanceName -f $instanceName)
+        }
+    }
+    else
+    {
+        $instanceName = 'RS_{0}' -f $ReportServiceInstanceName
+        Write-Verbose -Message ($script:localizedData.SetRSInstanceName -f $instanceName)
+    }
+
+    #    We we try and get the instanceName automatically, it will return an empty string
+    #    if it doesn't exist
+
+    if ([String]::IsNullOrEmpty($instanceName) -and -not $PSBoundParameters.ContainsKey('ReportServiceInstanceName'))
+    {
+        # Reporting Services is probably not installed
+        New-InvalidResultException -Message ($script:localizedData.IssueRetrievingRSInstance)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.RetrievingRSInstanceVersion)
+
+        $cimReportServicesParameters = @{
+            Namespace   = '{0}\{1}' -f $rootReportServerNameSpace, $instanceName
+            Class       = '__NameSpace'
+        }
+
+        $instanceVersionResult = Get-RsCimInstance @cimReportServicesParameters
+        if ($instanceNameResult.Error)
+        {
+            $arguments = Convert-HashtableToArguments $cimReportServicesParameters
+            $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+            New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
+        }
+        else
+        {
+            $instanceVersion = ($instanceVersionResult.Result).Name
+            Write-Verbose -Message ($script:localizedData.SetRSInstanceVersion -f $instanceVersion)
+        }
+    }
+
+    # We have InstanceName and we were able to get the instance version
+    # we can now get the settings even if they are not set yet
+
+    Write-Verbose -Message ($script:localizedData.RetrievingRSInstanceObject)
     $cimMSReportServerInstance = @{
-        Namespace = '{0}\{1}\{2}' -f $rootReportServerNameSpace, $instanceName, $instanceVersion
-        Class = 'MSReportServer_Instance'
+        Namespace   = '{0}\{1}\{2}' -f $rootReportServerNameSpace, $instanceName, $instanceVersion
+        Class       = 'MSReportServer_Instance'
     }
-    $cimReportServerInstanceObject = Get-CimInstance @cimMSReportServerInstance
 
-    $cimMSReportServerConfigurationSetting = @{
-        Namespace = '{0}\Admin' -f $cimMSReportServerInstance.Namespace
-        Class = 'MSReportServer_ConfigurationSetting'
+    $cimReportServerInstanceResults = Get-RsCimInstance @cimMSReportServerInstance
+
+    if ($cimReportServerInstanceResults.Error)
+    {
+        $arguments = Convert-HashtableToArguments $cimReportServerInstanceResults
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($cimReportServerInstanceResults.Result)
     }
-    $cimReportServerConfigurationObject = Get-CimInstance @cimMSReportServerConfigurationSetting
+    else
+    {
+        $cimReportServerInstanceObject = $instanceVersionResult.Result
+        Write-Verbose -Message ($script:localizedData.RetrievingRSInstanceObjectSuccess)
+    }
+
+    Write-Verbose -Message ($script:localizedData.RetrievingRSConfigurationObject)
+    $cimMSReportServerConfigurationSetting = @{
+        Namespace   = '{0}\Admin' -f $cimMSReportServerInstance.Namespace
+        Class       = 'MSReportServer_ConfigurationSetting'
+    }
+
+    $cimReportServerConfigurationResults = Get-RsCimInstance @cimMSReportServerConfigurationSetting
+    if ($cimReportServerConfigurationResults.Error)
+    {
+        $arguments = Convert-HashtableToArguments $cimReportServerConfigurationResults
+        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments")
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($cimReportServerConfigurationResults.Result)
+    }
+    else
+    {
+        $cimReportServerConfigurationObject = $cimReportServerConfigurationResults.Result
+        Write-Verbose -Message ($script:localizedData.RetrievingRSConfigurationObjectSuccess)
+    }
 
     return @{
         InstanceCIM      = $cimReportServerInstanceObject
@@ -950,6 +942,48 @@ Function Invoke-RsCimMethod
     }
 
     return $invokeCimMethodResult
+}
+
+Function Get-RsCimInstance #Complete
+{
+    [CmdletBinding()]
+    [OutputType([System.Collections.Hashtable])]
+    param
+    (
+        [Parameter()]
+        [System.String]
+        $Namespace,
+
+        [Parameter(Mandatory)]
+        [System.String]
+        $Class
+    )
+
+    $getCimInstanceParameters = @{
+        Class = $Class
+        ErrorAction = 'Stop'
+    }
+    $errorResult = $false
+
+    if ($PSBoundParameters.ContainsKey('Namespace'))
+    {
+        $getCimInstanceParameters['Namespace'] = $Namespace
+    }
+
+    try
+    {
+        $getCimInstanceResult = Get-CimInstance @getCimInstanceParameters
+    }
+    catch
+    {
+        $errorResult = $true
+        $getCimInstanceResult = $_
+    }
+
+    return @{
+        Result = $getCimInstanceResult
+        Error = $errorResult
+    }
 }
 
 <#
@@ -1142,46 +1176,5 @@ Function Test-NewSQLInstanceSku
         #TODO: some other kind of error
     }
 }
-
-Function Assert-NewSQLInstanceSku
-{
-    #compare sql sku or rs sku, but how do we get rs sku? We do we get edition from fullname and then convert to
-    #edition
-}
-
-Function Assert-CatalogSkuCompatibility
-{
-
-}
-
-Function New-RSSQLCreateDatabase
-{
-
-}
-
-Function Set-RSSQLDatabase
-{
-
-}
-
-Function New-RSSQLCredentials
-{
-
-}
-
-Function Assert-RSDatabaseExist
-{
-
-}
-
-Function New-RSSQLUserRights
-{
-
-}
-Function Set-RSDSN
-{
-
-}
-
 
 Export-ModuleMember -Function *-TargetResource
