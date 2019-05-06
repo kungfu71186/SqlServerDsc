@@ -22,8 +22,6 @@ Function Get-TargetResource
     )
 
     Write-Verbose -Message ($script:localizedData.GetRSState)
-
-    # Retrieve both CIM objects
     $reportingServicesCIMObjects = Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
 
     # Instance object is the actual SSRS/PBIRS Instance. Some information in here that is useful
