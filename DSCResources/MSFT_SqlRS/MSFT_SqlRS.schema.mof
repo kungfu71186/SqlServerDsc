@@ -1,9 +1,74 @@
 [ClassVersion("1.0.0.0"), FriendlyName("SqlRS")]
 class MSFT_SqlRS : OMI_BaseResource
 {
-    [Key, ValidateSet('PBIRS', 'SSRS')] String ReportServiceInstanceName;
-    [Write, Only used when Domain ServiceAccountLoginType is specified] String ServiceAccount;
-    [Write, Default('Virtual'), ValidateSet('Virtual', 'Network', 'System', 'Local', 'Windows')] String ServiceAccountLogonType;
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ServiceAccount,
+
+        [Parameter()]
+        [ReportServiceAccount]
+        $ServiceAccountLogonType,
+
+        [Parameter()]
+        [System.String]
+        $ReportManagerVirtualDirectory,
+
+        [Parameter()]
+        [System.String[]]
+        $ReportManagerUrls,
+
+        [Parameter()]
+        [System.String]
+        $ReportWebPortalVirtualDirectory,
+
+        [Parameter()]
+        [System.String[]]
+        $ReportWebPortalUrls,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseServerInstance,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseName,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ReportDatabaseCredential,
+
+        [Parameter()]
+        [ReportDatabaseLogonType]
+        $ReportDatabaseLogonType,
+
+        [Parameter()]
+        [System.String]
+        $EmailSender,
+
+        [Parameter()]
+        [System.String]
+        $EmailSMTP,
+
+        [Parameter()]
+        [EmailAuthenticationType]
+        $EmailAuthentication,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $EmailSMTPCredential,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ExecutionAccount,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $FileShareAccount
+
+    [Key, Description("Currently there are only two possible instances. SSRS and PBIRS. While it may be possible to add more, this requires a lot of work and it's not really supported. It is possible to have SSRS and PBIRS installed on the same server though. Because of these limitations, these will be the only values supported. Default{'PBIRS'}"), ValueMap{'PBIRS', 'SSRS'}, Values{'PBIRS', 'SSRS'}] String ReportServiceInstanceName;
+    [Write, Description("When specified, this will attempt to set the Reporting Service service account using it's short name. A Virtual account is a created account that can only be used locally. Meaning, that the database and reporting services have to be installed on the same server. If the database is intalled on a remote database like a cluster, a Windows account would be the best option, otherwise Reporting Services may fail to operate. Default{'Virtual'}), ValueMap{'Virtual', 'Network', 'System', 'Local', 'Windows'}, Values{'Virtual', 'Network', 'System', 'Local', 'Windows'}] String ServiceAccountLogonType;
+    [Write, Description("When 'ServiceAccountLogonType' is specified as 'Windows', this credential will be used as the Report Services service account.") ] String ServiceAccount;
     [Write, Default('ReportServer')] String ReportManagerVirtualDirectory;
     [Write, Default('http://+:80')] String ReportManagerUrls;
     [Write, Default('Reports')] String ReportWebPortalVirtualDirectory;
