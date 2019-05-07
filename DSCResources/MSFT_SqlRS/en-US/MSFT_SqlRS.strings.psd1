@@ -4,6 +4,7 @@ ConvertFrom-StringData -StringData @'
     IssueRetrievingCIMInstance = There was an issue when trying to retrieve the CIM instance. This shouldn't have happened. For further diganostics, please ensure that the following command can run `{0}`. (SRS{1}001)
     IssueRetrievingRSInstance  = There was an issue when trying to retrieve the Reporting Services instance name. This is probably due to the fact that Reporting Services may not be installed. (SRS{1}002)
     IssueRetrievingRSVersion   = There was an issue when trying to retrieve the Reporting Services version. This is probably due to the fact that the 'ReportServiceInstanceName' name of '{0}' is incorrect. (SRS{1}003)
+    IssueCallingCIMMethod      = There was an issue when trying to call the method '{0}' from the CIM Instance. (SRS{1}003)
 
     # Get-TargetResource (SRS0100)
     RetrievingRSState                = Attempting to get the current Reporting Service state. (SRS0100)
@@ -22,6 +23,8 @@ ConvertFrom-StringData -StringData @'
 
     # Set-TargetResource (SRS0300)
     SettingNonDesiredStateParameters = Attempting to set all parameters that are not in desired state for the instance '{0}'. (SRS0300)
+    AttemptingToSetServiceAccount    = Attempting to the set the service account '{0}', which is a '{1}' account. (SRS0301)
+    SetServiceAccountSuccessful      = Successfully set the Reporting Services service account. (SRS0302)
 
     # Compare-TargetResourceState (SRS0400)
     ComparingSpecifiedParameters = Comparing all the parameters specified for the instance '{0}'. (SRS0400)

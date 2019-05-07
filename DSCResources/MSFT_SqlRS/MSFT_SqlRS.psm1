@@ -505,7 +505,6 @@ Function Set-TargetResource
         $UseServiceWithRemoteDatabase = $false
     )
 
-
     $compareParameters = @{} + $PSBoundParameters
     # Need to set these parameters to compare if users are using the default parameter values
     $compareParameters['ServiceAccountLogonType']         = $ServiceAccountLogonType
@@ -522,85 +521,141 @@ Function Set-TargetResource
     $compareParameters.Remove('DatabaseConnectCredential')
     $compareParameters.Remove('UseServiceWithRemoteDatabase')
 
-    $compareTargetResourceState = Compare-TargetResourceState @compareParameters
+    # Compare what parameters are not in desired state
+    $compareTargetResource = Compare-TargetResourceState @compareParameters
+    $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
+
+    # We need to get read-only values
+    $getTargetResource = Get-TargetResource -ReportServiceInstance $ReportServiceInstanceName
+
+    # Get the CIM Configuration instance to update configuration when needed
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+    ).ConfigurationCIM
 
     Write-Verbose -Message ($LocalizedData.SettingNonDesiredStateParameters -f $ReportServiceInstanceName)
+    $lcid = (Get-Culture).LCID
 
-        # [Parameter(ValidateNotNull)]
-        # [System.Int]
-        # $LCID = (Get-Culture).LCID
+    <#
+      This script follows the same process the SSRS/PBIRS GUI installation uses
+      ========== Required ===========
+      1. Configure a service account used to run the SSRS/PBIRS service
+      2. Create the Web Service Manager - This is used for backend management and isn't the front-end interface
+      3. Create the Database
+         - Verify Database SKU (What does this do?)
+         - Generate Database script
+         - Run Database script
+         - Generate User rights script
+         - Run User rights script
+         - Set DSN (What does this do?)
+      4. Create the Web Portal (Front-end)
+      ========== Optional ===========
+      5. Configure email settings
+      6. Configure Execution Account
+      7. Encryption Keys - Nothing
+      8. Subscription Settings
+      9. Scale-out Deployment
+      10. PowerBI Cloud
+    #>
 
-    # <#
-    # Connect to database user is different than the granted rights user
-    # #>
-    # <#
-    #   This script follows the same process the SSRS/PBIRS GUI installation uses
-    #   ========== Required ===========
-    #   1. Configure a service account used to run the SSRS/PBIRS service
-    #   2. Create the Web Service Manager - This is used for backend management and isn't the front-end interface
-    #   3. Create the Database
-    #      - Verify Database SKU (What does this do?)
-    #      - Generate Database script
-    #      - Run Database script
-    #      - Generate User rights script
-    #      - Run User rights script
-    #      - Set DSN (What does this do?)
-    #   4. Create the Web Portal (Front-end)
-    #   ========== Optional ===========
-    #   5. Configure email settings
-    #   6. Configure Execution Account
-    #   7. Encryption Keys - Nothing
-    #   8. Subscription Settings
-    #   9. Scale-out Deployment
-    #   10. PowerBI Cloud
-    # #>
+    #region Check if service account is in compliance
+    <#
+    TODO: Follow up with this
+     If we change the account, we may need to backup and restore the encryption keys,
+     Grant access user rights to the database
+          ServiceController rsService = new ServiceController(this.ServerAdmin.RsServiceName, this.ConfigurationInstance.MachineName);
+      if (!this.m_skipBackupKey && (!this.StartWindowsServicePreChangeWindowsServiceIdentity(rsService) || this.ServerAdmin.IsInitialized && !this.BackupEncryptionKey()))
+        return;
+      this.m_skipBackupKey = true;
+      if (!this.StopWindowsService(rsService) || !this.ChangeWindowsServiceIdentity(rsService.ServiceName, this.rdoWindowsAccount, this.txtAccount, this.txtPassword, this.cmbBuiltinAccounts) || !this.GrantRights(rsService.ServiceName, this.cmbBuiltinAccounts, this.ServerAdmin.WindowsServiceIdentityActual))
+        return;
+      this.StartWindowsServicePostChangeWindowsServiceIdentity(rsService);
+      if (!this.UpdateUrls() || this.m_keyFile != null && !this.RestoreEncryptionKey())
+        return;
+      this.RestartServiceAndEnableUI();
+      this.RefreshUIWithErrorHandling();
+    #>
+    $serviceAccountTypeNonCompliantObject = $compareTargetResourceNonCompliant |
+        Where-Object -Filter {$_.Parameter -eq 'ServiceAccountLogonType'}
+    $serviceAccountNonCompliantObject = $compareTargetResourceNonCompliant |
+        Where-Object -Filter {$_.Parameter -eq 'ServiceAccount'}
 
-    # # Need to set these parameters to compare if users are using the default parameter values
-    # $PSBoundParameters['ReportServerVirtualDirectory'] = $ReportServerVirtualDirectory
-    # $PSBoundParameters['ReportServerReservedUrl']      = $ReportServerReservedUrl
-    # $PSBoundParameters['ReportsVirtualDirectory']      = $ReportsVirtualDirectory
-    # $PSBoundParameters['ReportsReservedUrl']           = $ReportsReservedUrl
 
-    # $compareTargetResource             = Compare-TargetResourceState @PSBoundParameters
-    # $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
-    # $rsConfigurationCIMInstance        = (Get-ReportingServicesCIM).ConfigurationCIM
-    # $getTargetResource                 = Get-TargetResource
+    if ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows -and -not $ServiceAccount)
+    {
+        <#
+         The service account type is windows, but we don't have
+         a credential set. Throw error
+        #>
+        throw
+    }
 
-    # $compareTargetResource
+    if ($serviceAccount)
+    {
+        <#
+         We have the service account specified, so we can just set these values
+         now, but if the logon type is now windows, the service account will be
+         set later
+        #>
+        $serviceAccountToSet = $ServiceAccount
+        $serviceAccountPasswordToSet = $serviceAccount.GetNetworkCredential().Password
+    }
 
-    # #region Check if service account is in compliance
-    # $serviceAccountNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {$_.Parameter -eq 'ServiceAccount'}
-    # if ($serviceAccountNonCompliantState)
-    # {
-    #     $useBuiltinServiceAccount = $false
-    #     $serviceName = $compareTargetResource | Where-Object -Filter {$_.Parameter -eq 'ServiceName'}
-    #     $builtinAccountsConversion = @{
-    #         Virtual = 'NT Service\{0}' -f $ServiceName.Actual
-    #         Network = 'Builtin\NetworkService'
-    #         System  = 'Builtin\System'
-    #         Local   = 'Builtin\LocalService'
-    #     }
+    $useBuiltinServiceAccount = $false
+    $expectedLogonType = $serviceAccountTypeNonCompliantObject.Expected
 
-    #     $serviceAccountUserName = $serviceAccount.UserName
-    #     if ($builtinAccountsConversion.ContainsKey($serviceAccountNonCompliantState.Expected))
-    #     {
-    #         $useBuiltinServiceAccount = $true
-    #         $serviceAccountUserName = $builtinAccountsConversion[$serviceAccountNonCompliantState.Expected]
-    #     }
+    if ($serviceAccountTypeNonCompliantObject)
+    {
+        $ServiceName = $getTargetResource.ServiceName
+        # Convert the logon type to an actual account we can set
+        if ($expectedLogonType -ne [ReportServiceAccount]::Windows)
+        {
+            $builtinAccountsConversion = @{
+                [ReportServiceAccount]::Virtual = 'NT Service\{0}' -f $ServiceName
+                [ReportServiceAccount]::Network = 'Builtin\NetworkService'
+                [ReportServiceAccount]::System  = 'Builtin\System'
+                [ReportServiceAccount]::Local   = 'Builtin\LocalService'
+            }
 
-    #     $invokeRsCimMethodParameters = @{
-    #         CimInstance = $rsConfigurationCIMInstance
-    #         MethodName = 'SetWindowsServiceIdentity'
-    #         Arguments = @{
-    #             UseBuiltInAccount = $useBuiltinServiceAccount
-    #             Account           = $serviceAccountUserName
-    #             Password          = $serviceAccount.GetNetworkCredential().Password
-    #         }
-    #     }
+            $useBuiltinServiceAccount = $true
+            $serviceAccountToSet = $builtinAccountsConversion[$expectedLogonType]
+            $serviceAccountPasswordToSet = ''
+        }
+    }
 
-    #     Invoke-RsCimMethod @invokeRsCimMethodParameters
-    # }
-    # #endregion Check if service account is in compliance
+    <#
+     The service account is not compliant and we not have the correct
+     service name it set.
+    #>
+    if ($serviceAccountNonCompliantObject -or $serviceAccountTypeNonCompliantObject)
+    {
+        Write-Verbose -Message ($LocalizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $expectedLogonType)
+
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $rsConfigurationCIMInstance
+            MethodName = 'SetWindowsServiceIdentity'
+            Arguments = @{
+                UseBuiltInAccount = $useBuiltinServiceAccount
+                Account           = $serviceAccountToSet
+                Password          = $serviceAccountPasswordToSet
+            }
+        }
+
+        $invokeRsCimMethodResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+        if ($invokeRsCimMethodResult.Error)
+        {
+            $errorMessage = $script:localizedData.IssueCallingCIMMethod -f ('SetWindowsServiceIdentity', 9)
+            New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
+        }
+        else
+        {
+            Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
+        }
+    }
+    #endregion Check if service account is in compliance
+
+
 
     # #region Check if web service manager is in compliance
     # $webServiceManagerNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {
@@ -945,7 +1000,7 @@ function Get-ReportingServicesCIM #Complete
     param
     (
         [Parameter()]
-        [ValidateSet('PBIRS', 'SSRS')]
+        [ReportServiceInstance]
         $ReportServiceInstanceName
     )
 
@@ -979,8 +1034,10 @@ function Get-ReportingServicesCIM #Complete
         Write-Verbose -Message ($script:localizedData.SetRSInstanceName -f $instanceName)
     }
 
-    #    We try and get the instanceName automatically, it will return an empty string
-    #    if it doesn't exist
+    <#
+     We try and get the instanceName automatically, it will return an empty string
+     if it doesn't exist
+    #>
 
     if ([String]::IsNullOrEmpty($instanceName) -and -not $PSBoundParameters.ContainsKey('ReportServiceInstanceName'))
     {
