@@ -1,132 +1,36 @@
 [ClassVersion("1.0.0.0"), FriendlyName("SqlRS")]
 class MSFT_SqlRS : OMI_BaseResource
 {
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $ServiceAccount,
-
-        [Parameter()]
-        [ReportServiceAccount]
-        $ServiceAccountLogonType,
-
-        [Parameter()]
-        [System.String]
-        $ReportManagerVirtualDirectory,
-
-        [Parameter()]
-        [System.String[]]
-        $ReportManagerUrls,
-
-        [Parameter()]
-        [System.String]
-        $ReportWebPortalVirtualDirectory,
-
-        [Parameter()]
-        [System.String[]]
-        $ReportWebPortalUrls,
-
-        [Parameter()]
-        [System.String]
-        $DatabaseServerInstance,
-
-        [Parameter()]
-        [System.String]
-        $DatabaseName,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $ReportDatabaseCredential,
-
-        [Parameter()]
-        [ReportDatabaseLogonType]
-        $ReportDatabaseLogonType,
-
-        [Parameter()]
-        [System.String]
-        $EmailSender,
-
-        [Parameter()]
-        [System.String]
-        $EmailSMTP,
-
-        [Parameter()]
-        [EmailAuthenticationType]
-        $EmailAuthentication,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $EmailSMTPCredential,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $ExecutionAccount,
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $FileShareAccount
-
     [Key, Description("Currently there are only two possible instances. SSRS and PBIRS. While it may be possible to add more, this requires a lot of work and it's not really supported. It is possible to have SSRS and PBIRS installed on the same server though. Because of these limitations, these will be the only values supported. Default{'PBIRS'}"), ValueMap{'PBIRS', 'SSRS'}, Values{'PBIRS', 'SSRS'}] String ReportServiceInstanceName;
     [Write, Description("When specified, this will attempt to set the Reporting Service service account using it's short name. A Virtual account is a created account that can only be used locally. Meaning, that the database and reporting services have to be installed on the same server. If the database is intalled on a remote database like a cluster, a Windows account would be the best option, otherwise Reporting Services may fail to operate. Default{'Virtual'}), ValueMap{'Virtual', 'Network', 'System', 'Local', 'Windows'}, Values{'Virtual', 'Network', 'System', 'Local', 'Windows'}] String ServiceAccountLogonType;
     [Write, Description("When 'ServiceAccountLogonType' is specified as 'Windows', this credential will be used as the Report Services service account.") ] String ServiceAccount;
-    [Write, Default('ReportServer')] String ReportManagerVirtualDirectory;
-    [Write, Default('http://+:80')] String ReportManagerUrls;
-    [Write, Default('Reports')] String ReportWebPortalVirtualDirectory;
-    [Write, Default('http://+:80')] String ReportWebPortalUrls;
-    [Write, Default("$env:Computername")] String DatabaseServerInstance;
-    [Write, EmbeddedInstance('MSFT_Credential')] String DatabaseConnectCredential;
-    [Write, Default('Integrated'), ValidateSet('Integrated', 'Sql')] String DatabaseConnectLogonType;
-    [Write, Default('ReportServer')] String DatabaseName;
-    [Write, User account used to grant access to the report server database. EmbeddedInstance('MSFT_Credential')] String ReportDatabaseCredential;
-    [Write, Default('Service'), ValidateSet('Service', 'Sql', 'Windows'] String ReportDatabaseLogonType;
-    [Write, Used to check if ReportDatabaseUserLoginType is Service, but database is remote. The report server will not work if using service account and the database is remote. This will only work if the Database and RS are installed on the same server. Default($false)] String UseServiceWithRemoteDatabase;
-    [Write, ] String EmailSender;
-    [Write, ] String EmailSMTP;
-    [Write, ValueMap{"None","Basic","Integrated"}, Values{"None","Basic","Integrated"}] String EmailAuthentication ;
-    [Write, "SMTP credentials used to connect to the SMTP server with. This parameter is only used if 'EmailAuthentication' is set to 'Basic'" EmbeddedInstance("MSFT_Credential")] String EmailSMTPCredential;
-    [Write, EmbeddedInstance("MSFT_Credential")] String ExecutionAccount;
-    [Write, EmbeddedInstance("MSFT_Credential")] String FileShareAccount;
-    [Read, Description("A list of Scale-Out servers used for high availability.")] String[] ScaleOutServers;
+    [Write, Description("This is the Report Services manager virtual directory. This is not the front-end, but is used for backend functions. Default{'ReportServer'"}] String ReportManagerVirtualDirectory;
+    [Write, Description("This is a list of strings used to setup the interface to connect to the backend manager. The protocol, ip address or DNS, and port must be specified. (http|https)://(IP|Domain):(Port). The one exception is the '+' sign for IP, this will allow access from all ip addresses (127.0.0.1, Hostname, and any others). Default{'http://+:80'}"] String[] ReportManagerUrls;
+    [Write, Description("This is the Web Portal virtual directory. This is used for the front-end. Default('Reports')] String ReportWebPortalVirtualDirectory;
+    [Write, This is a list of strings to setup the front-end interface for the web portal. An example would 'reports.contoso.com'. The protocol, ip address or DNS, and port must be specified. (http|https)://(IP|Domain):(Port). The one exception is the '+' sign for IP, this will allow access from all ip addresses (127.0.0.1, Hostname, and any others). Default{'http://+:80'}"] String[] ReportWebPortalUrls;
+    [Write, Description("This is the database server and instance name. If using the default instance (MSSQLSERVER), only specify the SQL server name. Otherwise, specify the SQL server and Instance name with a backslash: "SQLSERVER\MYINSTANCE". Default{"$env:Computername"}] String DatabaseServerName;
+    [Write, Description("This parameter will be used when connecting to the SQL database. This account must have rights to create and managed the databases as it will be used to create the Reporting Services Database. If Sql logon is specified, then the 'DatabaseConnectCredential' must be specifed. Because this is an integrated uesr account, the resource needs to be run with PsDscRunAsCredential if not using a Sql Logon account.") Default{'Integrated'}, ValueMap{'Integrated', 'Sql'}, Values{'Integrated', 'Sql'}] String DatabaseConnectLogonType;
+    [Write, Description("This parameter is only used when the 'DatabaseConnectLogonType' is specifed as 'Sql'. When specified, this is the SQL login user account used to connect to the database. This credential will need the ability to manage and create databases as it will be used to create the Reporting Services database."), EmbeddedInstance('MSFT_Credential')] String DatabaseConnectCredential;
+    [Write, Description("This is the name of database that is created. If the database already exists and this server is not part of that database, then the resource will simply fail. The exception to this is when the 'IsScaleOutServer' is specifed as '$true', then the resource will attempt to add the server as a Scale-Out server to the database.  Default{'ReportServer'}"] String DatabaseName;
+    [Write, Description("User account used to grant access to the report server database. This will be the user that is given rights to manage the database after it has been created. If 'Service' is specified, then the user account will be the one defined in 'ServiceAccountLogonType/ServiceAccount'. If 'Sql' or 'Windows' is specifed, then the 'ReportDatabaseCredential' must also be specifed. Default{'Service'}"), ValueMap{'Service', 'Sql', 'Windows'}, Values{'Service', 'Sql', 'Windows'}] String ReportDatabaseLogonType;
+    [Write, Description("User account used to grant access to the report server database. This will be the user that is given rights to manage the database after it has been created. This is sonly used when the 'ReportDatabaseLogonType' is specified as 'Sql' or 'Windows'."), EmbeddedInstance('MSFT_Credential')] String ReportDatabaseCredential;
+    [Write, Description("Used to check if 'ReportDatabaseUserLoginType' is Service, but database is remote. The report server will not work if using a local service account and the database is remote. If the 'ServiceAccountLogonType' was specified as a 'Windows' account, then this should work ok with a remote database server. The local service accounts only work if the Database and Reporting Services are installed on the same server. Default{$false}"] String UseServiceWithRemoteDatabase;
+    [Write, Description("The email address used to send emails as")] String EmailSender;
+    [Write, Description("The SMTP server address")] String EmailSMTP;
+    [Write, Description("The type of authentication used to login to the SMTP server. If 'Basic' is specifed, then the 'EmailAuthentication' parameter must be specified. If 'Integrated' is specifed, then the Reporting Services service account will be used that was specified in 'ServiceAccountLogonType/ServiceAccount'. Default{'None'}"), ValueMap{"None","Basic","Integrated"}, Values{"None","Basic","Integrated"}] String EmailAuthentication;
+    [Write, Description("SMTP credentials used to connect to the SMTP server with. This parameter is only used if 'EmailAuthentication' is set to 'Basic'"), EmbeddedInstance('MSFT_Credential')] String EmailSMTPCredential;
+    [Write, Description("The credentials of the execution account to be used."), EmbeddedInstance('MSFT_Credential')] String ExecutionAccount;
+    [Write, Description("The credentials of the file share account to be used."), EmbeddedInstance('MSFT_Credential')] String FileShareAccount;
+    [Read, Description("NOT YET IMPLEMENTED. When specified, the database server will be added as a Scale-Out server. If the database is not yet created, it will create the database. Default{'$false'}")] Boolean IsScaleOutServer;
+    [Read, Description("NOT YET IMPLEMENTED. A list of Scale-Out servers used for high availability.")] String[] ScaleOutServers;
     [Read, Description("Is the Reporting Services instance initialized. This is used to create the encryption keys. This only needs to be run the first time or when the keys change.")] Boolean IsInitialized;
     [Read, Description("Reporting Services product version.")] String Version;
-    [Read, Description("Reporting Services edition name.")] String EditionName;
+    [Read, Description("Reporting Services edition name which used to get the Sku type.")] String EditionName;
     [Read, Description("Reporting Services installation ID.")] String InstallationID;
     [Read, Description("Reporting Services configuration file path.")] String ReportServerConfigPath;
     [Read, Description("The current service account that Reporting Services is using.")] String ServiceAccountActual;
     [Read, Description("Whether or not Email is connecting to the SMTP server using SSL.")] String EmailSMTPSSL;
-    [Read, Description("Readable URLs for the Reporting Services manager")] String ReportServerInstanceURLs;
-    [Read, Description("Readable URLs for the Reporting Services web portal")] String ReportServerInstanceWebPortalURLs;
+    [Read, Description("Readable URLs for the Reporting Services manager. Such as http://reportmanager.contoso.com")] String ReportServerInstanceURLs;
+    [Read, Description("Readable URLs for the Reporting Services web portal. Such as http://reports.contoso.com")] String ReportServerInstanceWebPortalURLs;
 };
 
-<#
-    [Key, Description("Name of the SQL Server Reporting Services instance to be configured.")] String InstanceName;
-    [Required, Description("Name of the SQL Server to host the Reporting Service database.")] String DatabaseServerName;
-    [Required, Description("Name of the SQL Server instance to host the Reporting Service database.")] String DatabaseInstanceName;
-    [Write, Description("The type of authentication to use when connecting to the database server, the default will be Integrated."), ValueMap{"Integrated","SQL"}, Values{"Integrated","SQL"}] String DatabaseAuthentication;
-    [Write, Description("SQL user used to logon to the database. This parameter is only used if 'DatabaseAuthentication' is set to 'SQL'"), EmbeddedInstance("MSFT_Credential")] String DatabaseSQLCredential;
-    [Write, Description("Service Account used to run the Reporting Services windows service. If using a managed service account, you can specify any password, but the '$' must be attached to the end of the service account name"), EmbeddedInstance("MSFT_Credential")] String ServiceAccount;
-    [Write, Description('Specifies whether or not to use a Builtin Service Account. If this is true, then the ServiceAccount can only include one of the following options {"Virtual", "Network", "System", "Local"}')] Boolean UseBuiltInServiceAccount;
-    [Write, Description("Report Server Web Service virtual directory. Optional.")] String ReportServerVirtualDirectory;
-    [Write, Description("Report Server URL reservations. Optional. If not specified, 'http://+:80' URL reservation will be used.")] String ReportServerReservedUrl[];
-    [Write, Description("Report Manager/Report Web App virtual directory name. Optional.")] String ReportsVirtualDirectory;
-    [Write, Description("Report Manager/Report Web App URL reservations. Optional. If not specified, 'http://+:80' URL reservation will be used.")] String ReportsReservedUrl[];
-    [Write, Description("The email used for the email sender address")] String EmailSender;
-    [Write, Description("The SMTP server used to send emails")] String EmailSMTP;
-    [Write, Description("The SMTP authentication type used to connect to the SMTP server. 'None' will not use any credentials. 'Basic' will use a username and password. 'Integrated' will use the 'ServiceAccount' credentials"), , ValueMap{"None","Basic","Integrated"}, Values{"None","Basic","Integrated"}] String EmailAuthentication ;
-    [Write, Description("SMTP credentials used to connect to the SMTP server with. This parameter is only used if 'EmailAuthentication' is set to 'Basic'"), EmbeddedInstance("MSFT_Credential")] String EmailSMTPUser;
-    [Write, Description("Execution service account credentials. This account can be used to run a report on behalf of this service account."), EmbeddedInstance("MSFT_Credential")] String ExecutionAccount;
-    [Write, Description("File Share service account credentials. This account can be used to setup subscriptions to access file shares."), EmbeddedInstance("MSFT_Credential")] String FileShareAccount;
-    [Write, Description("If connections to the Reporting Services must use SSL. If this parameter is not assigned a value, the default is that Reporting Services does not use SSL.")] Boolean UseSsl;
-    [Write, Description("Reporting Services need to be restarted after initialization or settings change. If this parameter is set to $true, Reporting Services will not be restarted, even after initialization.")] Boolean SuppressRestart;
-    [Read, Description("A list of Scale-Out servers used for high availability.")] String[] ScaleOutServers;
-    [Read, Description("Is the Reporting Services instance initialized. This is used to create the encryption keys. This only needs to be run the first time or when the keys change.")] Boolean IsInitialized;
-    [Read, Description("Reporting Services product version.")] String Version;
-    [Read, Description("Reporting Services edition name.")] String EditionName;
-    [Read, Description("Reporting Services installation ID.")] String InstallationID;
-    [Read, Description("Reporting Services configuration file path.")] String ReportServerConfigPath;
-    [Read, Description("The current service account that Reporting Services is using.")] String ServiceAccountActual;
-    [Read, Description("Whether or not Email is connecting to the SMTP server using SSL.")] String EmailSMTPSSL;
-    [Read, Description("Readable URLs for the Reporting Services manager")] String ReportServerManagerURLs;
-    [Read, Description("Readable URLs for the Reporting Services web portal")] String ReportWebPortalURLs;
-    [Read, Description("The name of the Reporting Services database.")] String DatabaseName;
-#>
