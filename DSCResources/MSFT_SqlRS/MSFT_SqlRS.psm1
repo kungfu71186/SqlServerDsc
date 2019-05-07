@@ -82,7 +82,6 @@ $smtpLogonType = @(
     }
 )
 
-
 Function Get-TargetResource #Complete
 {
     [CmdletBinding()]
@@ -300,55 +299,54 @@ Function Get-TargetResource #Complete
     return $getTargetResourceResult
 }
 
-Function Set-TargetResource
+Function Test-TargetResource #Complete
 {
     [CmdletBinding()]
     param
     (
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $InstanceName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseServerName,
-
-        [Parameter(Mandatory = $true)]
-        [System.String]
-        $DatabaseInstanceName,
-
-        [Parameter()]
-        [System.String]
-        $DatabaseName = 'ReportServer',
-
-        [Parameter()]
-        [ValidateSet('Integrated', 'Windows', 'SQL')]
-        [System.String]
-        $DatabaseAuthentication = 'Integrated',
-
-        [Parameter()]
-        [System.Management.Automation.PSCredential]
-        $DatabaseSQLCredential,
+         [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
         $ServiceAccount,
 
         [Parameter()]
-        [System.String]
-        $ReportServerVirtualDirectory = 'ReportServer',
-
-        [Parameter()]
-        [System.String[]]
-        $ReportServerReservedUrl = 'http://+:80',
+        [ReportServiceAccount]
+        $ServiceAccountLogonType = [ReportServiceAccount]::Virtual,
 
         [Parameter()]
         [System.String]
-        $ReportsVirtualDirectory = 'Reports',
+        $ReportManagerVirtualDirectory = 'ReportServer',
 
         [Parameter()]
         [System.String[]]
-        $ReportsReservedUrl = 'http://+:80',
+        $ReportManagerUrls = @('http://+:80'),
+
+        [Parameter()]
+        [System.String]
+        $ReportWebPortalVirtualDirectory = 'Reports',
+
+        [Parameter()]
+        [System.String[]]
+        $ReportWebPortalUrls = @('http://+:80'),
+
+        [Parameter()]
+        [System.String]
+        $DatabaseServerInstance = $env:Computername,
+
+        [Parameter()]
+        [System.String]
+        $DatabaseName = 'ReportServer',
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ReportDatabaseCredential,
+
+        [Parameter()]
+        [ReportDatabaseLogonType]
+        $ReportDatabaseLogonType = [ReportDatabaseLogonType]::Service,
 
         [Parameter()]
         [System.String]
@@ -359,13 +357,12 @@ Function Set-TargetResource
         $EmailSMTP,
 
         [Parameter()]
-        [ValidateSet('None','Basic','Integrated')]
-        [System.String]
-        $EmailAuthentication = 'None',
+        [EmailAuthenticationType]
+        $EmailAuthentication = [EmailAuthenticationType]::None,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $EmailSMTPUser,
+        $EmailSMTPCredential,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
@@ -376,219 +373,53 @@ Function Set-TargetResource
         $FileShareAccount,
 
         [Parameter()]
-        [System.Boolean]
-        $UseSsl,
+        [DatabaseConnectLogonType]
+        $DatabaseConnectLogonType = [DatabaseConnectLogonType]::Integrated,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $DatabaseConnectCredential,
 
         [Parameter()]
         [System.Boolean]
-        $UseExistingDatabase,
-
-        [Parameter(ValidateNotNull)]
-        [System.Int]
-        $LCID = (Get-Culture).LCID
+        $UseServiceWithRemoteDatabase = $false
     )
-    <#
-    Connect to database user is different than the granted rights user
-    #>
-    <#
-      This script follows the same process the SSRS/PBIRS GUI installation uses
-      ========== Required ===========
-      1. Configure a service account used to run the SSRS/PBIRS service
-      2. Create the Web Service Manager - This is used for backend management and isn't the front-end interface
-      3. Create the Database
-         - Verify Database SKU (What does this do?)
-         - Generate Database script
-         - Run Database script
-         - Generate User rights script
-         - Run User rights script
-         - Set DSN (What does this do?)
-      4. Create the Web Portal (Front-end)
-      ========== Optional ===========
-      5. Configure email settings
-      6. Configure Execution Account
-      7. Encryption Keys - Nothing
-      8. Subscription Settings
-      9. Scale-out Deployment
-      10. PowerBI Cloud
-    #>
 
+    Write-Verbose -Message ($LocalizedData.TestingDesiredState -f $ReportServiceInstanceName)
+
+    $compareParameters = @{} + $PSBoundParameters
     # Need to set these parameters to compare if users are using the default parameter values
-    $PSBoundParameters['ReportServerVirtualDirectory'] = $ReportServerVirtualDirectory
-    $PSBoundParameters['ReportServerReservedUrl']      = $ReportServerReservedUrl
-    $PSBoundParameters['ReportsVirtualDirectory']      = $ReportsVirtualDirectory
-    $PSBoundParameters['ReportsReservedUrl']           = $ReportsReservedUrl
+    $compareParameters['ServiceAccountLogonType']         = $ServiceAccountLogonType
+    $compareParameters['ReportManagerVirtualDirectory']   = $ReportManagerVirtualDirectory
+    $compareParameters['ReportManagerUrls']               = $ReportManagerUrls
+    $compareParameters['ReportWebPortalVirtualDirectory'] = $ReportWebPortalVirtualDirectory
+    $compareParameters['ReportWebPortalUrls']             = $ReportWebPortalUrls
+    $compareParameters['DatabaseServerInstance']          = $DatabaseServerInstance
+    $compareParameters['DatabaseName']                    = $DatabaseName
+    $compareParameters['ReportDatabaseLogonType']         = $ReportDatabaseLogonType
 
-    $compareTargetResource             = Compare-TargetResourceState @PSBoundParameters
-    $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
-    $rsConfigurationCIMInstance        = (Get-ReportingServicesCIM).ConfigurationCIM
-    $getTargetResource                 = Get-TargetResource
+    # Don't need to compare these parameters
+    $compareParameters.Remove('DatabaseConnectLogonType')
+    $compareParameters.Remove('DatabaseConnectCredential')
+    $compareParameters.Remove('UseServiceWithRemoteDatabase')
 
-    $compareTargetResource
+    $compareTargetResourceNonCompliant = Compare-TargetResourceState @compareParameters | Where-Object {
+        $_.Pass -eq $false
+    }
 
-    #region Check if service account is in compliance
-    $serviceAccountNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {$_.Parameter -eq 'ServiceAccount'}
-    if ($serviceAccountNonCompliantState)
+    if ($compareTargetResourceNonCompliant)
     {
-        $useBuiltinServiceAccount = $false
-        $serviceName = $compareTargetResource | Where-Object -Filter {$_.Parameter -eq 'ServiceName'}
-        $builtinAccountsConversion = @{
-            Virtual = 'NT Service\{0}' -f $ServiceName.Actual
-            Network = 'Builtin\NetworkService'
-            System  = 'Builtin\System'
-            Local   = 'Builtin\LocalService'
-        }
-
-        $serviceAccountUserName = $serviceAccount.UserName
-        if ($builtinAccountsConversion.ContainsKey($serviceAccountNonCompliantState.Expected))
-        {
-            $useBuiltinServiceAccount = $true
-            $serviceAccountUserName = $builtinAccountsConversion[$serviceAccountNonCompliantState.Expected]
-        }
-
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $rsConfigurationCIMInstance
-            MethodName = 'SetWindowsServiceIdentity'
-            Arguments = @{
-                UseBuiltInAccount = $useBuiltinServiceAccount
-                Account           = $serviceAccountUserName
-                Password          = $serviceAccount.GetNetworkCredential().Password
-            }
-        }
-
-        Invoke-RsCimMethod @invokeRsCimMethodParameters
-    }
-    #endregion Check if service account is in compliance
-
-    #region Check if web service manager is in compliance
-    $webServiceManagerNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {
-        $_.Parameter -eq 'ReportServerVirtualDirectory' -or $_.Parameter -eq 'ReportServerReservedUrl'
-    }
-
-    $webServiceUrlNonCompliantState  = $compareTargetResourceNonCompliant | Where-Object -Filter {
-        $_.Parameter -eq 'ReportServerReservedUrl'
-    }
-
-    #TODO: Need to update this as well if service account is changed
-    #URL reservations are created for the current windows service account.
-    #Changing the windows service account requires updating all the URL reservations manually.
-
-    <#
-      Is the Virtual Directory or the reservations urls out of compliance
-
-      if Virtual Directory is out of compliance, we need to remove the urls first
-      and then set the virtual directory
-
-      if urls are out of compliance, we need to remove the urls first and then set them
-      so no matter what we need to remove the urls
-    #>
-    if($webServiceManagerNonCompliantState -or $webServiceUrlNonCompliantState)
-    {
-        $webServiceCommonArguments = @{
-            Lcid = $LCID
-            Application = 'ReportServerWebService'
-        }
-
-        #region Remove URL Strings
-        $webServiceUrlState = $compareTargetResource | Where-Object -Filter {
-            $_.Parameter -eq 'ReportServerReservedUrl'
-        }
-
-        if (-not [String]::IsNullOrEmpty($webServiceUrlState.Actual))
-        {
-            $invokeRsCimMethodParameters = @{
-                CimInstance = $rsConfigurationCIMInstance
-                MethodName = 'RemoveURL'
-                Arguments = $webServiceCommonArguments + @{UrlString = ''}
-            }
-
-            $webServiceUrlState.Actual | ForEach-Object {
-                write-host "urlstring" $_
-                $invokeRsCimMethodParameters.Arguments.UrlString = $_
-                Invoke-RsCimMethod @invokeRsCimMethodParameters
-            }
-        }
-        #endregion Remove URL Strings
-
-        if ($webServiceManagerNonCompliantState)
-        {
-            # Set Virtual Directory on the Web Service (Manager)
-            $invokeRsCimMethodParameters = @{
-                CimInstance = $rsConfigurationCIMInstance
-                MethodName = 'SetVirtualDirectory'
-                Arguments = $webServiceCommonArguments + @{VirtualDirectory = $ReportServerVirtualDirectory}
-            }
-
-            Invoke-RsCimMethod @invokeRsCimMethodParameters
-        }
-
-        # Set the URLS for the Web Service (Manager)
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $rsConfigurationCIMInstance
-            MethodName = 'ReserveURL'
-            Arguments = $webServiceCommonArguments + @{UrlString = ''}
-        }
-
-        $ReportServerReservedUrl | ForEach-Object -Process {
-            $invokeRsCimMethodParameters.Arguments.UrlString = $_
-            Invoke-RsCimMethod @invokeRsCimMethodParameters
-        }
-    }
-    #endregion Check if web service manager is in compliance
-
-    #region Check if database is in compliance
-    <#
-      You can use an existing database or create a new one
-      Probably set a new parameter, useExisting
-
-      Check if database exists first and then if it does use existing to join
-      the server as a scale-out server to the database
-
-      Otherwise we need to create the database first
-    #>
-
-    Import-SQLPSModule
-
-    $sqlConnectParameters = @{
-        DatabaseServerName = $DatabaseServerName
-        DatabaseInstanceName = $DatabaseInstanceName
-        DatabaseAuthentication = $DatabaseAuthentication
-    }
-
-    if ($PSBoundParameters.ContainsKey('DatabaseSQLCredential'))
-    {
-        $sqlConnectParameters.DatabaseSQLCredential = $DatabaseSQLCredential
-    }
-
-    # New-SQLServerConnection will check if we can connect to database
-    $databaseServerSQLInstance = New-SQLServerConnection @sqlConnectParameters
-
-    if ($databaseServerSQLInstance.Databases[$DatabaseName])
-    {
-        # Database exists, so we don't create, but possibly add the node
+        Write-Verbose -Message ($LocalizedData.RSNotInDesiredState -f $ReportServiceInstanceName)
+        return $false
     }
     else
     {
-        <#
-            Database does not exist, so we need to create it
-            Create the ReportServer and ReportServerTempDB databases
-        #>
-        $getReportServiceFullName = $getTargetResource.EditionName
-
-        #TODO: Need new parameter to specify report services database user
-        $newDatabaseCreationParameters = @{
-            ReportingServicesFullName = $getReportServiceFullName
-            DatabaseName = $DatabaseName
-            LCID = $LCID
-
-        }
-
-        $databaseServerSQLInstance | New-CreateNewDatabase @newDatabaseCreationParameters
-
+        Write-Verbose -Message ($LocalizedData.RSInDesiredState -f $ReportServiceInstanceName)
+        return $true
     }
-    #endregion Check if database is in compliance
 }
 
-Function Test-TargetResource #TODO: Add remaining parameters
+Function Set-TargetResource
 {
     [CmdletBinding()]
     param
@@ -603,31 +434,31 @@ Function Test-TargetResource #TODO: Add remaining parameters
 
         [Parameter()]
         [ReportServiceAccount]
-        $ServiceAccountLogonType,
+        $ServiceAccountLogonType = [ReportServiceAccount]::Virtual,
 
         [Parameter()]
         [System.String]
-        $ReportManagerVirtualDirectory,
+        $ReportManagerVirtualDirectory = 'ReportServer',
 
         [Parameter()]
         [System.String[]]
-        $ReportManagerUrls,
+        $ReportManagerUrls = @('http://+:80'),
 
         [Parameter()]
         [System.String]
-        $ReportWebPortalVirtualDirectory,
+        $ReportWebPortalVirtualDirectory = 'Reports',
 
         [Parameter()]
         [System.String[]]
-        $ReportWebPortalUrls,
+        $ReportWebPortalUrls = @('http://+:80'),
 
         [Parameter()]
         [System.String]
-        $DatabaseServerInstance,
+        $DatabaseServerInstance = $env:Computername,
 
         [Parameter()]
         [System.String]
-        $DatabaseName,
+        $DatabaseName = 'ReportServer',
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
@@ -635,7 +466,7 @@ Function Test-TargetResource #TODO: Add remaining parameters
 
         [Parameter()]
         [ReportDatabaseLogonType]
-        $ReportDatabaseLogonType,
+        $ReportDatabaseLogonType = [ReportDatabaseLogonType]::Service,
 
         [Parameter()]
         [System.String]
@@ -647,7 +478,7 @@ Function Test-TargetResource #TODO: Add remaining parameters
 
         [Parameter()]
         [EmailAuthenticationType]
-        $EmailAuthentication,
+        $EmailAuthentication = [EmailAuthenticationType]::None,
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
@@ -659,25 +490,245 @@ Function Test-TargetResource #TODO: Add remaining parameters
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $FileShareAccount
+        $FileShareAccount,
+
+        [Parameter()]
+        [DatabaseConnectLogonType]
+        $DatabaseConnectLogonType = [DatabaseConnectLogonType]::Integrated,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $DatabaseConnectCredential,
+
+        [Parameter()]
+        [System.Boolean]
+        $UseServiceWithRemoteDatabase = $false
     )
 
-    Write-Verbose -Message ($LocalizedData.TestingDesiredState -f $ReportServiceInstanceName)
 
-    $compareTargetResourceNonCompliant = Compare-TargetResourceState @PSBoundParameters | Where-Object {
-        $_.Pass -eq $false
-    }
+    $compareParameters = @{} + $PSBoundParameters
+    # Need to set these parameters to compare if users are using the default parameter values
+    $compareParameters['ServiceAccountLogonType']         = $ServiceAccountLogonType
+    $compareParameters['ReportManagerVirtualDirectory']   = $ReportManagerVirtualDirectory
+    $compareParameters['ReportManagerUrls']               = $ReportManagerUrls
+    $compareParameters['ReportWebPortalVirtualDirectory'] = $ReportWebPortalVirtualDirectory
+    $compareParameters['ReportWebPortalUrls']             = $ReportWebPortalUrls
+    $compareParameters['DatabaseServerInstance']          = $DatabaseServerInstance
+    $compareParameters['DatabaseName']                    = $DatabaseName
+    $compareParameters['ReportDatabaseLogonType']         = $ReportDatabaseLogonType
 
-    if ($compareTargetResourceNonCompliant)
-    {
-        Write-Verbose -Message ($LocalizedData.RSNotInDesiredState -f $ReportServiceInstanceName)
-        return $false
-    }
-    else
-    {
-        Write-Verbose -Message ($LocalizedData.RSInDesiredState -f $ReportServiceInstanceName)
-        return $true
-    }
+    # Don't need to compare these parameters
+    $compareParameters.Remove('DatabaseConnectLogonType')
+    $compareParameters.Remove('DatabaseConnectCredential')
+    $compareParameters.Remove('UseServiceWithRemoteDatabase')
+
+    $compareTargetResourceState = Compare-TargetResourceState @compareParameters
+
+    Write-Verbose -Message ($LocalizedData.SettingNonDesiredStateParameters -f $ReportServiceInstanceName)
+
+        # [Parameter(ValidateNotNull)]
+        # [System.Int]
+        # $LCID = (Get-Culture).LCID
+
+    # <#
+    # Connect to database user is different than the granted rights user
+    # #>
+    # <#
+    #   This script follows the same process the SSRS/PBIRS GUI installation uses
+    #   ========== Required ===========
+    #   1. Configure a service account used to run the SSRS/PBIRS service
+    #   2. Create the Web Service Manager - This is used for backend management and isn't the front-end interface
+    #   3. Create the Database
+    #      - Verify Database SKU (What does this do?)
+    #      - Generate Database script
+    #      - Run Database script
+    #      - Generate User rights script
+    #      - Run User rights script
+    #      - Set DSN (What does this do?)
+    #   4. Create the Web Portal (Front-end)
+    #   ========== Optional ===========
+    #   5. Configure email settings
+    #   6. Configure Execution Account
+    #   7. Encryption Keys - Nothing
+    #   8. Subscription Settings
+    #   9. Scale-out Deployment
+    #   10. PowerBI Cloud
+    # #>
+
+    # # Need to set these parameters to compare if users are using the default parameter values
+    # $PSBoundParameters['ReportServerVirtualDirectory'] = $ReportServerVirtualDirectory
+    # $PSBoundParameters['ReportServerReservedUrl']      = $ReportServerReservedUrl
+    # $PSBoundParameters['ReportsVirtualDirectory']      = $ReportsVirtualDirectory
+    # $PSBoundParameters['ReportsReservedUrl']           = $ReportsReservedUrl
+
+    # $compareTargetResource             = Compare-TargetResourceState @PSBoundParameters
+    # $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
+    # $rsConfigurationCIMInstance        = (Get-ReportingServicesCIM).ConfigurationCIM
+    # $getTargetResource                 = Get-TargetResource
+
+    # $compareTargetResource
+
+    # #region Check if service account is in compliance
+    # $serviceAccountNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {$_.Parameter -eq 'ServiceAccount'}
+    # if ($serviceAccountNonCompliantState)
+    # {
+    #     $useBuiltinServiceAccount = $false
+    #     $serviceName = $compareTargetResource | Where-Object -Filter {$_.Parameter -eq 'ServiceName'}
+    #     $builtinAccountsConversion = @{
+    #         Virtual = 'NT Service\{0}' -f $ServiceName.Actual
+    #         Network = 'Builtin\NetworkService'
+    #         System  = 'Builtin\System'
+    #         Local   = 'Builtin\LocalService'
+    #     }
+
+    #     $serviceAccountUserName = $serviceAccount.UserName
+    #     if ($builtinAccountsConversion.ContainsKey($serviceAccountNonCompliantState.Expected))
+    #     {
+    #         $useBuiltinServiceAccount = $true
+    #         $serviceAccountUserName = $builtinAccountsConversion[$serviceAccountNonCompliantState.Expected]
+    #     }
+
+    #     $invokeRsCimMethodParameters = @{
+    #         CimInstance = $rsConfigurationCIMInstance
+    #         MethodName = 'SetWindowsServiceIdentity'
+    #         Arguments = @{
+    #             UseBuiltInAccount = $useBuiltinServiceAccount
+    #             Account           = $serviceAccountUserName
+    #             Password          = $serviceAccount.GetNetworkCredential().Password
+    #         }
+    #     }
+
+    #     Invoke-RsCimMethod @invokeRsCimMethodParameters
+    # }
+    # #endregion Check if service account is in compliance
+
+    # #region Check if web service manager is in compliance
+    # $webServiceManagerNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {
+    #     $_.Parameter -eq 'ReportServerVirtualDirectory' -or $_.Parameter -eq 'ReportServerReservedUrl'
+    # }
+
+    # $webServiceUrlNonCompliantState  = $compareTargetResourceNonCompliant | Where-Object -Filter {
+    #     $_.Parameter -eq 'ReportServerReservedUrl'
+    # }
+
+    # #TODO: Need to update this as well if service account is changed
+    # #URL reservations are created for the current windows service account.
+    # #Changing the windows service account requires updating all the URL reservations manually.
+
+    # <#
+    #   Is the Virtual Directory or the reservations urls out of compliance
+
+    #   if Virtual Directory is out of compliance, we need to remove the urls first
+    #   and then set the virtual directory
+
+    #   if urls are out of compliance, we need to remove the urls first and then set them
+    #   so no matter what we need to remove the urls
+    # #>
+    # if($webServiceManagerNonCompliantState -or $webServiceUrlNonCompliantState)
+    # {
+    #     $webServiceCommonArguments = @{
+    #         Lcid = $LCID
+    #         Application = 'ReportServerWebService'
+    #     }
+
+    #     #region Remove URL Strings
+    #     $webServiceUrlState = $compareTargetResource | Where-Object -Filter {
+    #         $_.Parameter -eq 'ReportServerReservedUrl'
+    #     }
+
+    #     if (-not [String]::IsNullOrEmpty($webServiceUrlState.Actual))
+    #     {
+    #         $invokeRsCimMethodParameters = @{
+    #             CimInstance = $rsConfigurationCIMInstance
+    #             MethodName = 'RemoveURL'
+    #             Arguments = $webServiceCommonArguments + @{UrlString = ''}
+    #         }
+
+    #         $webServiceUrlState.Actual | ForEach-Object {
+    #             write-host "urlstring" $_
+    #             $invokeRsCimMethodParameters.Arguments.UrlString = $_
+    #             Invoke-RsCimMethod @invokeRsCimMethodParameters
+    #         }
+    #     }
+    #     #endregion Remove URL Strings
+
+    #     if ($webServiceManagerNonCompliantState)
+    #     {
+    #         # Set Virtual Directory on the Web Service (Manager)
+    #         $invokeRsCimMethodParameters = @{
+    #             CimInstance = $rsConfigurationCIMInstance
+    #             MethodName = 'SetVirtualDirectory'
+    #             Arguments = $webServiceCommonArguments + @{VirtualDirectory = $ReportServerVirtualDirectory}
+    #         }
+
+    #         Invoke-RsCimMethod @invokeRsCimMethodParameters
+    #     }
+
+    #     # Set the URLS for the Web Service (Manager)
+    #     $invokeRsCimMethodParameters = @{
+    #         CimInstance = $rsConfigurationCIMInstance
+    #         MethodName = 'ReserveURL'
+    #         Arguments = $webServiceCommonArguments + @{UrlString = ''}
+    #     }
+
+    #     $ReportServerReservedUrl | ForEach-Object -Process {
+    #         $invokeRsCimMethodParameters.Arguments.UrlString = $_
+    #         Invoke-RsCimMethod @invokeRsCimMethodParameters
+    #     }
+    # }
+    # #endregion Check if web service manager is in compliance
+
+    # #region Check if database is in compliance
+    # <#
+    #   You can use an existing database or create a new one
+    #   Probably set a new parameter, useExisting
+
+    #   Check if database exists first and then if it does use existing to join
+    #   the server as a scale-out server to the database
+
+    #   Otherwise we need to create the database first
+    # #>
+
+    # Import-SQLPSModule
+
+    # $sqlConnectParameters = @{
+    #     DatabaseServerName = $DatabaseServerName
+    #     DatabaseInstanceName = $DatabaseInstanceName
+    #     DatabaseAuthentication = $DatabaseAuthentication
+    # }
+
+    # if ($PSBoundParameters.ContainsKey('DatabaseSQLCredential'))
+    # {
+    #     $sqlConnectParameters.DatabaseSQLCredential = $DatabaseSQLCredential
+    # }
+
+    # # New-SQLServerConnection will check if we can connect to database
+    # $databaseServerSQLInstance = New-SQLServerConnection @sqlConnectParameters
+
+    # if ($databaseServerSQLInstance.Databases[$DatabaseName])
+    # {
+    #     # Database exists, so we don't create, but possibly add the node
+    # }
+    # else
+    # {
+    #     <#
+    #         Database does not exist, so we need to create it
+    #         Create the ReportServer and ReportServerTempDB databases
+    #     #>
+    #     $getReportServiceFullName = $getTargetResource.EditionName
+
+    #     #TODO: Need new parameter to specify report services database user
+    #     $newDatabaseCreationParameters = @{
+    #         ReportingServicesFullName = $getReportServiceFullName
+    #         DatabaseName = $DatabaseName
+    #         LCID = $LCID
+
+    #     }
+
+    #     $databaseServerSQLInstance | New-CreateNewDatabase @newDatabaseCreationParameters
+
+    # }
+    # #endregion Check if database is in compliance
 }
 
 Function Compare-TargetResourceState #Complete
@@ -751,7 +802,19 @@ Function Compare-TargetResourceState #Complete
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $FileShareAccount
+        $FileShareAccount,
+
+        [Parameter()]
+        [DatabaseConnectLogonType]
+        $DatabaseConnectLogonType,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $DatabaseConnectCredential,
+
+        [Parameter()]
+        [System.Boolean]
+        $UseServiceWithRemoteDatabase
     )
 
     Write-Verbose -Message ($LocalizedData.ComparingSpecifiedParameters -f $ReportServiceInstanceName)

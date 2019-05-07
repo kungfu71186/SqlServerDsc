@@ -27,7 +27,7 @@ ConvertFrom-StringData -StringData @'
     ComparingSpecifiedParameters = Comparing all the parameters specified for the instance '{0}'. (SRS0400)
     CheckingParameterState       = Checking if the parameter '{0}' is in desired state. (SRS0401)
     ParameterNotInDesiredState   = The parameter '{0}' was found to NOT be in the correct desired state. Expected: '{1}', Actual '{2}'. (SRS0402)
-    ParameterInDesiredState      = The parameter '{0}' was found to be the correct desired state. Expected: '{1}',        Actual '{2}'. (SRS0403)
+    ParameterInDesiredState      = The parameter '{0}' was found to be in the correct desired state. Expected: '{1}', Actual '{2}'. (SRS0403)
 
     # (SRS9000) will be used for anything else
     # Get-RsCimInstance
