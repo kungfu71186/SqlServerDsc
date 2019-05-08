@@ -1236,7 +1236,7 @@ Function Invoke-ChangeServiceAccount
         DatabaseConnectLogonType  = $DatabaseConnectLogonType
         DatabaseConnectCredential = $DatabaseConnectCredential
     }
-    #TODO: This probably only be ran if the report database user
+    #TODO: This should probably only be ran if the report database user
     #is not the service account
     #Invoke-GrantUserRights @grantUserRightsParameters
 
