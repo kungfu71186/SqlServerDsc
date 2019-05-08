@@ -525,9 +525,6 @@ Function Set-TargetResource
     $compareTargetResource = Compare-TargetResourceState @compareParameters
     $compareTargetResourceNonCompliant = @($compareTargetResource | Where-Object {$_.Pass -eq $false})
 
-    # We need to get read-only values
-    $getTargetResource = Get-TargetResource -ReportServiceInstance $ReportServiceInstanceName
-
     # Get the CIM Configuration instance to update configuration when needed
     $rsConfigurationCIMInstance = (
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
@@ -580,83 +577,23 @@ Function Set-TargetResource
     $serviceAccountNonCompliantObject = $compareTargetResourceNonCompliant |
         Where-Object -Filter {$_.Parameter -eq 'ServiceAccount'}
 
-
-    if ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows -and -not $ServiceAccount)
-    {
-        <#
-         The service account type is windows, but we don't have
-         a credential set. Throw error
-        #>
-        throw
-    }
-
-    if ($serviceAccount)
-    {
-        <#
-         We have the service account specified, so we can just set these values
-         now, but if the logon type is now windows, the service account will be
-         set later
-        #>
-        $serviceAccountToSet = $ServiceAccount
-        $serviceAccountPasswordToSet = $serviceAccount.GetNetworkCredential().Password
-    }
-
-    $useBuiltinServiceAccount = $false
-    $expectedLogonType = $serviceAccountTypeNonCompliantObject.Expected
-
-    if ($serviceAccountTypeNonCompliantObject)
-    {
-        $ServiceName = $getTargetResource.ServiceName
-        # Convert the logon type to an actual account we can set
-        if ($expectedLogonType -ne [ReportServiceAccount]::Windows)
-        {
-            $builtinAccountsConversion = @{
-                [ReportServiceAccount]::Virtual = 'NT Service\{0}' -f $ServiceName
-                [ReportServiceAccount]::Network = 'Builtin\NetworkService'
-                [ReportServiceAccount]::System  = 'Builtin\System'
-                [ReportServiceAccount]::Local   = 'Builtin\LocalService'
-            }
-
-            $useBuiltinServiceAccount = $true
-            $serviceAccountToSet = $builtinAccountsConversion[$expectedLogonType]
-            $serviceAccountPasswordToSet = ''
-        }
-    }
-
     <#
      The service account is not compliant and we not have the correct
      service name it set.
     #>
     if ($serviceAccountNonCompliantObject -or $serviceAccountTypeNonCompliantObject)
     {
-        Write-Verbose -Message ($LocalizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $expectedLogonType)
-
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $rsConfigurationCIMInstance
-            MethodName = 'SetWindowsServiceIdentity'
-            Arguments = @{
-                UseBuiltInAccount = $useBuiltinServiceAccount
-                Account           = $serviceAccountToSet
-                Password          = $serviceAccountPasswordToSet
-            }
+        $setServiceAccountParameters = @{
+            ReportServiceInstanceName = $ReportServiceInstanceName
+            ServiceAccount = $ServiceAccount
+            ServiceAccountLogonType = $ServiceAccountLogonType
         }
-
-        $invokeRsCimMethodResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-        if ($invokeRsCimMethodResult.Error)
-        {
-            $errorMessage = $script:localizedData.IssueCallingCIMMethod -f ('SetWindowsServiceIdentity', 9)
-            New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
-        }
-        else
-        {
-            Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
-        }
+        Invoke-ChangeServiceAccount @setServiceAccountParameters
     }
     #endregion Check if service account is in compliance
 
 
-
+<#
     # #region Check if web service manager is in compliance
     # $webServiceManagerNonCompliantState = $compareTargetResourceNonCompliant | Where-Object -Filter {
     #     $_.Parameter -eq 'ReportServerVirtualDirectory' -or $_.Parameter -eq 'ReportServerReservedUrl'
@@ -783,7 +720,7 @@ Function Set-TargetResource
     #     $databaseServerSQLInstance | New-CreateNewDatabase @newDatabaseCreationParameters
 
     # }
-    # #endregion Check if database is in compliance
+    # #endregion Check if database is in compliance #>
 }
 
 Function Compare-TargetResourceState #Complete
@@ -1211,6 +1148,259 @@ Function Get-RsCimInstance #Complete
         Error = $errorResult
     }
 }
+
+Function Invoke-ChangeServiceAccount
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ServiceAccount,
+
+        [Parameter(Mandatory = $true)]
+        [ReportServiceAccount]
+        $ServiceAccountLogonType,
+
+        [Parameter(Mandatory = $true)]
+        [DatabaseConnectLogonType]
+        $DatabaseConnectLogonType,
+
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.PSCredential]
+        $DatabaseConnectCredential
+    )
+
+    # We need to get read-only values
+    $getTargetResource = Get-TargetResource -ReportServiceInstance $ReportServiceInstanceName
+
+    <#
+     1. Make sure Service is running
+     2. Check if database is initialized
+     3. If database is initialized - backup encryption keys
+     4. Stop service
+     5. Invoke-SetServiceAccount
+     6. Grant user rights
+     7. Start service
+     8. Update URLs
+     9. Restore Encryption key if database was initialized and we have a backup
+    #>
+
+    $serviceName = $getTargetResource.ServiceName
+    if ((Get-Service -Name $serviceName).Status -ne 'Running')
+    {
+        # We could also try and start and then throw error if it's not starting
+        #TODO: throw message, service is not running
+        throw
+    }
+
+    $backupEncryptionKey = $false
+    if ($getTargetResource.IsInitialized)
+    {
+        # Need to backup key
+        #TODO: add new parameter for password?
+        # $backupStatus = Invoke-BackupEncryptionKey
+
+        if($backupStatus)
+        {
+            $backupEncryptionKey = $true
+        }
+        else
+        {
+            #TODO: throw error, backup failed
+            throw
+        }
+    }
+
+    # Stop the windows service
+    try
+    {
+        Stop-Service $serviceName -ErrorAction Stop
+    }
+    catch
+    {
+        #TODO: throw error can't stop service
+        throw
+    }
+
+    # Will throw errors within the function if it fails
+    Invoke-SetServiceAccount @PSBoundParameters
+
+    #TODO: implement Grantuserrights
+    # Will throw errors within the function if it fails
+    $grantUserRightsParameters = @{
+        ReportServiceInstance     = $ReportServiceInstanceName
+        DatabaseConnectLogonType  = $DatabaseConnectLogonType
+        DatabaseConnectCredential = $DatabaseConnectCredential
+    }
+    #TODO: This probably only be ran if the report database user
+    #is not the service account
+    #Invoke-GrantUserRights @grantUserRightsParameters
+
+    #TODO: implement Invoke-UpdateUrls, use listreservedurls to remove and update
+    # Will throw errors within the function if it fails
+    #Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
+
+    if ($backupEncryptionKey)
+    {
+        #TODO: Invoke-RestoreEncryptionKeys
+        # restore keys
+        # Need file name and password, should be same parameters an encrypt
+        #Invoke-RestoreEncryptionKeys
+    }
+
+    #Complete
+}
+
+Function Invoke-SetServiceAccount
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter()]
+        [System.Management.Automation.PSCredential]
+        $ServiceAccount,
+
+        [Parameter(Mandatory = $true)]
+        [ReportServiceAccount]
+        $ServiceAccountLogonType
+    )
+
+    # We need to get read-only values
+    $getTargetResource = Get-TargetResource -ReportServiceInstance $ReportServiceInstanceName
+
+    if ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows -and -not $ServiceAccount)
+    {
+        <#
+         The service account type is windows, but we don't have
+         a credential set. Throw error
+        #>
+        throw
+    }
+
+    if ($serviceAccount)
+    {
+        <#
+         We have the service account specified, so we can just set these values
+         now, but if the logon type is now windows, the service account will be
+         set later
+        #>
+        $serviceAccountToSet = $ServiceAccount
+        $serviceAccountPasswordToSet = $serviceAccount.GetNetworkCredential().Password
+    }
+
+    $useBuiltinServiceAccount = $false
+    $expectedLogonType = $serviceAccountTypeNonCompliantObject.Expected
+
+    if ($serviceAccountTypeNonCompliantObject)
+    {
+        $ServiceName = $getTargetResource.ServiceName
+        # Convert the logon type to an actual account we can set
+        if ($expectedLogonType -ne [ReportServiceAccount]::Windows)
+        {
+            $builtinAccountsConversion = @{
+                [ReportServiceAccount]::Virtual = 'NT Service\{0}' -f $ServiceName
+                [ReportServiceAccount]::Network = 'Builtin\NetworkService'
+                [ReportServiceAccount]::System  = 'Builtin\System'
+                [ReportServiceAccount]::Local   = 'Builtin\LocalService'
+            }
+
+            $useBuiltinServiceAccount = $true
+            $serviceAccountToSet = $builtinAccountsConversion[$expectedLogonType]
+            $serviceAccountPasswordToSet = ''
+        }
+    }
+
+    Write-Verbose -Message ($LocalizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $expectedLogonType)
+
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $rsConfigurationCIMInstance
+        MethodName = 'SetWindowsServiceIdentity'
+        Arguments = @{
+            UseBuiltInAccount = $useBuiltinServiceAccount
+            Account           = $serviceAccountToSet
+            Password          = $serviceAccountPasswordToSet
+        }
+    }
+
+    $invokeRsCimMethodResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+    if ($invokeRsCimMethodResult.Error)
+    {
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f ('SetWindowsServiceIdentity', 9)
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
+    }
+}
+
+Function Invoke-GrantUserRights
+{
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter(Mandatory = $true)]
+        [DatabaseConnectLogonType]
+        $DatabaseConnectLogonType,
+
+        [Parameter(Mandatory = $true)]
+        [System.Management.Automation.PSCredential]
+        $DatabaseConnectCredential
+    )
+
+    # Get the CIM Configuration instance
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+    ).ConfigurationCIM
+
+    if ([String]::IsNullOrEmpty($rsConfigurationCIMInstance.DatabaseName))
+    {
+        # Database doesn't exist yet, so we can't update user
+        # we can't throw an error though
+        return $true
+    }
+
+    # Generate user rights script
+
+
+
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $rsConfigurationCIMInstance
+        MethodName = 'GenerateDatabaseRightsScript'
+        Arguments = @{
+            UserName      = $rsConfigurationCIMInstance.WindowsServiceIdentityActual
+            DatabaseName  = $rsConfigurationCIMInstance.DatabaseName
+            IsRemote      =
+            IsWindowsUser =
+        }
+    }
+
+    $invokeRsCimMethodResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+    if ($invokeRsCimMethodResult.Error)
+    {
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f ('SetWindowsServiceIdentity', 9)
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
+    }
+
+    return $true
+}
+
 
 <#
     .NOTES
