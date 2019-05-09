@@ -23,8 +23,7 @@ ConvertFrom-StringData -StringData @'
 
     # Set-TargetResource (SRS0300)
     SettingNonDesiredStateParameters = Attempting to set all parameters that are not in desired state for the instance '{0}'. (SRS0300)
-    AttemptingToSetServiceAccount    = Attempting to the set the service account '{0}', which is a '{1}' account. (SRS0301)
-    SetServiceAccountSuccessful      = Successfully set the Reporting Services service account. (SRS0302)
+
 
     # Compare-TargetResourceState (SRS0400)
     ComparingSpecifiedParameters = Comparing all the parameters specified for the instance '{0}'. (SRS0400)
@@ -33,8 +32,8 @@ ConvertFrom-StringData -StringData @'
     ParameterInDesiredState      = The parameter '{0}' was found to be in the correct desired state. Expected: '{1}', Actual '{2}'. (SRS0403)
 
     # (SRS9000) will be used for anything else
-    # Get-RsCimInstance
-    RetrievingRSInstanceNameAuto           = Attempting to retrieve the Reporting Service instance name automatically. (SRS9000)
+    # Get-ReportingServicesCIM (SRS9000)
+    GetReportingServicesCIM                = Attempting to retrieve the Report Service CIM Instance. (SRS9000)
     SetRSInstanceName                      = Reporting Service instance name was set to '{0}'. (SRS9001)
     RetrievingRSInstanceVersion            = Attempting to retrieve the Reporting Service instance version. (SRS9002)
     SetRSInstanceVersion                   = Reporting Service instance version was set to '{0}'. (SRS9003)
@@ -42,6 +41,29 @@ ConvertFrom-StringData -StringData @'
     RetrievingRSInstanceObjectSuccess      = The Reporting Services instance object was successfully retrieved. (SRS9005)
     RetrievingRSConfigurationObject        = Attempting to retrieve the Reporting Service configuration object. (SRS9006)
     RetrievingRSConfigurationObjectSuccess = The Reporting Services configuration object was successfully retrieved. (SRS9007)
+    RetrievingRSInstanceNameAuto           = Attempting to retrieve the Reporting Service instance name automatically. (SRS9008)
+
+    # Invoke-RsCimMethod (SRS9050)
+    InvokingRsCimMethod = Attempting to invoke a method on the CIM Instance. (SRS9050)
+    InvalidAssociation  = HRESULT: {0}. Could be due an issue when trying to retrieve the SID of a Windows user. (SRS9051)
+
+    # Get-RsCimInstance (SRS9075)
+    GetRsCimInstance = Attempting to retrieve a CIM Instance. (SRS9075)
+
+    # Invoke-SetServiceAccount (9100)
+    SettingServiceAccount         = Attempting to the set the Service Account. (SRS9100)
+    AttemptingToSetServiceAccount = Attempting to the set the service account '{0}', which is a '{1}' account. (SRS9101)
+    SetServiceAccountSuccessful   = Successfully set the Reporting Services service account. (SRS9102)
+    WindowsAccountNoCred          = The Service Account has a logon type of 'Windows', but the credentials were not specified. (SRS9103)
+    WindowsAccountNoDomain        = The Service Account '{0}' has a logon type of 'Windows', which requires the domain name to specified. ['Localhost\\{0}' or 'Domain\\{0}']. (SRS9104)
+
+    # Invoke-GrantUserRights (9150)
+    GeneratingUserRightsScript        = Attempting generate the user rights script. (SRS9150)
+    GenerateUserRightScriptParam      = Generating the SQL user rights script with the following parameters: UserName: '{0}', DatabaseName: '{1}', IsRemote: '{2}', IsWindowsUser: '{3}'. (SRS9151)
+    GenerateUserRightScriptSuccessful = Successfully generated the SQL user rights script. (SRS9102)
+
+    # Invoke-ChangeServiceAccount (9200)
+    InvokeChangeServiceAccount = Attempting to change the service account.
 
     # MSFT_ReportServiceSkuUtils (SRS0600)
     RSSkuTypeNotInitialized       = It appears that the Reporting Services sku type hasn't been defined yet or not found. This should be set to one of the following types: {0}. (SRS0600)

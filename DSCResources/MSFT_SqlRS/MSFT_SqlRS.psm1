@@ -942,6 +942,8 @@ function Get-ReportingServicesCIM #Complete
         $ReportServiceInstanceName
     )
 
+    Write-Verbose -Message ($LocalizedData.GetReportingServicesCIM)
+
     $rootReportServerNameSpace = 'ROOT\Microsoft\SqlServer\ReportServer'
     if (-not $PSBoundParameters.ContainsKey('ReportServiceInstanceName'))
     {
@@ -1079,6 +1081,12 @@ Function Invoke-RsCimMethod #Complete
         $Arguments
     )
 
+    Write-Verbose -Message ($LocalizedData.InvokingRsCimMethod)
+
+    $errorCodes = @{
+        [int]0x80040211 = 'InvalidAssociation' # -2147220975
+    }
+
     $invokeCimMethodParameters = @{
         MethodName = $MethodName
         ErrorAction = 'Stop'
@@ -1094,6 +1102,29 @@ Function Invoke-RsCimMethod #Complete
     try
     {
         $invokeCimMethodResult = $CimInstance | Invoke-CimMethod @invokeCimMethodParameters
+
+        if ($errorCodes.ContainsKey($invokeCimMethodResult.HRESULT))
+        {
+            $errorMessage = $errorCodes[$invokeCimMethodResult.HRESULT]
+            New-InvalidOperationException -Message ($LocalizedData.$errorMessage -f $invokeCimMethodResult.HRESULT)
+        }
+        elseif ($invokeCimMethodResult.HRESULT -ne 0)
+        {
+            if ($invokeCimMethodResult | Get-Member -Name 'ExtendedErrors')
+            {
+                <#
+                    The returned object property ExtendedErrors is an array
+                    so that needs to be concatenated.
+                #>
+                $errorMessage = $invokeCimMethodResult.ExtendedErrors -join ';'
+            }
+            else
+            {
+                $errorMessage = 'HRESULT: {0}' -f $invokeCimMethodResult.HRESULT
+            }
+
+            New-InvalidOperationException -Message $errorMessage
+        }
     }
     catch
     {
@@ -1121,6 +1152,8 @@ Function Get-RsCimInstance #Complete
         [System.String]
         $Class
     )
+
+    Write-Verbose -Message ($LocalizedData.GetRsCimInstance)
 
     $getCimInstanceParameters = @{
         Class = $Class
@@ -1174,6 +1207,8 @@ Function Invoke-ChangeServiceAccount
         [System.Management.Automation.PSCredential]
         $DatabaseConnectCredential
     )
+
+    Write-Verbose -Message ($LocalizedData.InvokeChangeServiceAccount)
 
     # We need to get read-only values
     $rsConfigurationCIMInstance = (
@@ -1281,7 +1316,7 @@ Function Invoke-ChangeServiceAccount
             IsWindowsUser = $true
         }
 
-        $databasUserPermissionsScript = Invoke-GrantUserRights @grantUserRightsParameters
+        $databasUserPermissionsScript = Get-GrantUserRightsScript @grantUserRightsParameters
     }
     #endregion Update the user permissions on the database
 
@@ -1301,8 +1336,7 @@ Function Invoke-ChangeServiceAccount
     # Will throw errors within the function if it fails
     #Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
 
-    if ($backupEncryptionKey)
-    {
+    if ($backupEncryptionKey){
         #TODO: Invoke-RestoreEncryptionKeys
         # restore keys
         # Need file name and password, should be same parameters an encrypt
@@ -1312,7 +1346,7 @@ Function Invoke-ChangeServiceAccount
     #Complete
 }
 
-Function Invoke-SetServiceAccount #TODO: Add verbose logging
+Function Invoke-SetServiceAccount #Complete
 {
     param
     (
@@ -1329,6 +1363,8 @@ Function Invoke-SetServiceAccount #TODO: Add verbose logging
         $ServiceAccountLogonType
     )
 
+    Write-Verbose -Message ($LocalizedData.SettingServiceAccount)
+
     $rsConfigurationCIMInstance = (
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
     ).ConfigurationCIM
@@ -1338,23 +1374,25 @@ Function Invoke-SetServiceAccount #TODO: Add verbose logging
     {
         <#
          The service account type is windows, but we don't have
-         a credential set. Throw error
+         a credential.
         #>
-        throw
+        New-InvalidOperationException -Message ($script:localizedData.WindowsAccountNoCred)
     }
     elseif ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows)
     {
-        $useBuiltinServiceAccount = $false
-        $userDomain =  $ServiceAccount.GetNetworkCredential().Domain
+        $useBuiltinServiceAccount    = $false
+        $userName                    = $ServiceAccount.GetNetworkCredential().Username
+        $userDomain                  = $ServiceAccount.GetNetworkCredential().Domain
+        $serviceAccountPasswordToSet = $serviceAccount.GetNetworkCredential().Password
+        $serviceAccountToSet         = '{0}\{1}' -f $userDomain, $userName
+
         if ([String]::IsNullOrEmpty($userDomain))
         {
-            # TODO: message - There needs to be a domain name with a windows account
-            throw
+            $errorMessage = (
+                $script:localizedData.WindowsAccountNoDomain -f $userName
+            )
+            New-InvalidOperationException -Message $errorMessage
         }
-        $serviceAccountToSet = '{0}\{1}' -f
-            $userDomain, $ServiceAccount.GetNetworkCredential().Username
-
-        $serviceAccountPasswordToSet = $serviceAccount.GetNetworkCredential().Password
     }
     else
     {
@@ -1387,7 +1425,9 @@ Function Invoke-SetServiceAccount #TODO: Add verbose logging
 
     if ($invokeRsCimMethodResult.Error)
     {
-        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f ('SetWindowsServiceIdentity', 9)
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+            $invokeRsCimMethodParameters.MethodName, 9
+        )
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
     }
     else
@@ -1396,7 +1436,7 @@ Function Invoke-SetServiceAccount #TODO: Add verbose logging
     }
 }
 
-Function Invoke-GrantUserRights #TODO: Add verbose logging
+Function Get-GrantUserRightsScript #Complete
 {
     param
     (
@@ -1421,6 +1461,8 @@ Function Invoke-GrantUserRights #TODO: Add verbose logging
         $IsWindowsUser
     )
 
+    Write-Verbose -Message ($LocalizedData.GeneratingUserRightsScript)
+
     $rsConfigurationCIMInstance = (
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
     ).ConfigurationCIM
@@ -1437,16 +1479,21 @@ Function Invoke-GrantUserRights #TODO: Add verbose logging
         }
     }
 
+    Write-Verbose -Message (
+        $LocalizedData.GenerateUserRightScriptParam -f $UserName, $DatabaseName, $IsRemote, $IsWindowsUser
+    )
     $invokeRsCimMethodResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
 
     if ($invokeRsCimMethodResult.Error)
     {
-        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f ('SetWindowsServiceIdentity', 9)
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+            $invokeRsCimMethodParameters.MethodName, 9
+        )
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
     }
     else
     {
-        Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
+        Write-Verbose -Message ($script:localizedData.GenerateUserRightScriptSuccessful)
     }
 
     return $invokeRsCimMethodResult.Result.Script
