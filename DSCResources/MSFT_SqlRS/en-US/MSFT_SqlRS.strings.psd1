@@ -70,10 +70,14 @@ ConvertFrom-StringData -StringData @'
 
     # Invoke-UpdateUrls (9250)
     AttemptingToUpdateUrls    = Attempting to update the reserved Urls. (SRS9250)
-    RemovingReservedUrl       = Attempting to remove the url: '{0}' from the web application: '{1}'. (SRS9251)
-    RemoveReservedUrlsSuccess = Successfully removed the url. (SRS9252)
-    AddingReservedUrl         = Attempting to add the url: '{0}' from the web application: '{1}'. (SRS9253)
-    AddedReservedUrlsSuccess  = Successfully added the url. (SRS9254)
+
+    # Add-ReservedUrl (9260)
+    AddingReservedUrl         = Attempting to add the url: '{0}' from the web application: '{1}'. (SRS9260)
+    AddedReservedUrlsSuccess  = Successfully added the url. (SRS9261)
+
+    # Remove-ReservedUrl (9270)
+    RemovingReservedUrl       = Attempting to remove the url: '{0}' from the web application: '{1}'. (SRS970)
+    RemoveReservedUrlsSuccess = Successfully removed the url. (SRS9271)
 
     # Invoke-BackupEncryptionKey (9300)
     AttemptingToBackupKey             = Attempting to backup the encryption keys. (SRS9300)

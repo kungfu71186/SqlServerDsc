@@ -46,6 +46,12 @@ enum ReportServiceAccount
     Windows
 }
 
+enum WebApplicationType
+{
+    ReportServerWebService
+    ReportServerWebApp
+}
+
 $databaseLogonType = @(
     [PSCustomObject]@{
         ShortName = [ReportDatabaseLogonType]::Service
@@ -240,8 +246,8 @@ Function Get-TargetResource #Complete
 
     #region Get Report Server Manager and Web Portal Urls that are modifiable
     $reservedUrls = Get-ReservedUrls -ReportServiceInstanceName $ReportServiceInstanceName
-    $getTargetResourceResult['ReportManagerUrls'] = $reservedUrls.ReportServerWebService
-    $getTargetResourceResult['ReportWebPortalUrls'] = $reservedUrls.ReportServerWebApp
+    $getTargetResourceResult['ReportManagerUrls'] = $reservedUrls[[WebApplicationType]::ReportServerWebService]
+    $getTargetResourceResult['ReportWebPortalUrls'] = $reservedUrls[[WebApplicationType]::ReportServerWebApp]
     #endregion Get Report Server Manager and Web Portal Urls that are modifiable
 
     #region Get list of servers in cluster
@@ -994,7 +1000,7 @@ function Get-ReportingServicesCIM #Complete
         Class       = 'MSReportServer_Instance'
     }
 
-    $cimReportServerInstanceResults = Get-RsCimInstance @cimMSReportServerInstance
+    $cimReportServerInstanceResults = Get-RsCimInstance @cimMSReportServerInstance -Verbose:$false
 
     if ($cimReportServerInstanceResults.Error)
     {
@@ -1073,7 +1079,7 @@ Function Invoke-RsCimMethod #Complete
 
     try
     {
-        $invokeCimMethodResult = $CimInstance | Invoke-CimMethod @invokeCimMethodParameters
+        $invokeCimMethodResult = $CimInstance | Invoke-CimMethod @invokeCimMethodParameters -Verbose:$false
 
         if ($errorCodes.ContainsKey($invokeCimMethodResult.HRESULT))
         {
@@ -1187,7 +1193,7 @@ Function Invoke-ChangeServiceAccount
 
     # We need to get read-only values
     $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
     <#
@@ -1356,7 +1362,7 @@ Function Invoke-SetServiceAccount #Complete
     Write-Verbose -Message ($script:localizedData.SettingServiceAccount)
 
     $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
 
@@ -1457,7 +1463,7 @@ Function Get-GrantUserRightsScript #Complete
     Write-Verbose -Message ($script:localizedData.GeneratingUserRightsScript)
 
     $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
     # Generate user rights script
@@ -1520,7 +1526,7 @@ Function Invoke-RestoreEncryptionKey
     New-NotImplementedException -Message ($script:localizedData.RestoreEncryptionKeyNotImplemented)
 }
 
-Function Invoke-UpdateUrls #Complete with follow-up
+Function Invoke-UpdateUrls #Complete
 {
     [CmdletBinding()]
     [OutputType([System.Boolean])]
@@ -1539,137 +1545,162 @@ Function Invoke-UpdateUrls #Complete with follow-up
     Write-Verbose -Message ($script:localizedData.AttemptingToUpdateUrls)
 
     $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
-    if (-not $PSBoundParameters.ContainsKey('ReservedUrls'))
-    {
-        <#
-          The reserved urls are not specified, so we need to get current
-          reserved urls and update the urls with the ones that currently exist.
-          This could be due to change of service account as to why we would want
-          to do this.
+    $reservedUrlsAll = Get-ReservedUrls -ReportServiceInstanceName $ReportServiceInstanceName
 
-          TODO: Should we just set ReservedUrls and interate through that, this means that
-          if for some reason the webapp and service do differ, then they will now be the same
-          after the fact
-        #>
-        $reservedUrlsAll = Get-ReservedUrls -ReportServiceInstanceName $ReportServiceInstanceName
-
-        $lcid = (Get-Culture).LCID
-
-        #region Remove Urls, WebApp and then WebService
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $rsConfigurationCIMInstance
-            MethodName = 'RemoveURL'
-            Arguments = @{
-                Application = 'ReportServerWebApp'
-                LCID = $lcid
-                UrlString = ''
-            }
-        }
-
-        $reservedUrlsAll.ReportServerWebApp | ForEach-Object {
-            Write-Verbose -Message (
-                $script:localizedData.RemovingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
-            )
-
-            $invokeRsCimMethodParameters.Arguments.UrlString = $_
-            $removeUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-            if ($reportServerUrlsResult.Error)
-            {
-                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
-                    $invokeRsCimMethodParameters.MethodName, 9
-                )
-                New-InvalidResultException -Message $errorMessage -ErrorRecord ($removeUrlResult.Result)
-            }
-            else
-            {
-                Write-Verbose -Message ($script:localizedData.RemoveReservedUrlsSuccess)
-            }
-        }
-
-        $invokeRsCimMethodParameters.Arguments.Application = 'ReportServerWebService'
-        $reservedUrlsAll.ReportServerWebService | ForEach-Object {
-            Write-Verbose -Message (
-                $script:localizedData.RemovingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
-            )
-
-            $invokeRsCimMethodParameters.Arguments.UrlString = $_
-            $removeUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-            if ($reportServerUrlsResult.Error)
-            {
-                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
-                    $invokeRsCimMethodParameters.MethodName, 9
-                )
-                New-InvalidResultException -Message $errorMessage -ErrorRecord ($removeUrlResult.Result)
-            }
-            else
-            {
-                Write-Verbose -Message ($script:localizedData.RemoveReservedUrlsSuccess)
-            }
-        }
-        #endregion Remove Urls, WebApp and then WebService
-
-        #region Reserve Urls, WebService and then WebApp
-        $invokeRsCimMethodParameters = @{
-            CimInstance = $rsConfigurationCIMInstance
-            MethodName = 'ReserveURL'
-            Arguments = @{
-                Application = 'ReportServerWebService'
-                LCID = $lcid
-                UrlString = ''
-            }
-        }
-
-        $reservedUrlsAll.ReportServerWebService | ForEach-Object {
-            Write-Verbose -Message (
-                $script:localizedData.AddingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
-            )
-
-            $invokeRsCimMethodParameters.Arguments.UrlString = $_
-            $addUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-            if ($reportServerUrlsResult.Error)
-            {
-                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
-                    $invokeRsCimMethodParameters.MethodName, 9
-                )
-                New-InvalidResultException -Message $errorMessage -ErrorRecord ($addUrlResult.Result)
-            }
-            else
-            {
-                Write-Verbose -Message ($script:localizedData.AddedReservedUrlsSuccess)
-            }
-        }
-
-        $invokeRsCimMethodParameters.Arguments.Application = 'ReportServerWebApp'
-        $reservedUrlsAll.ReportServerWebApp | ForEach-Object {
-            Write-Verbose -Message (
-                $script:localizedData.AddingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
-            )
-
-            $invokeRsCimMethodParameters.Arguments.UrlString = $_
-            $addUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
-
-            if ($reportServerUrlsResult.Error)
-            {
-                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
-                    $invokeRsCimMethodParameters.MethodName, 9
-                )
-                New-InvalidResultException -Message $errorMessage -ErrorRecord ($addUrlResult.Result)
-            }
-            else
-            {
-                Write-Verbose -Message ($script:localizedData.AddedReservedUrlsSuccess)
-            }
-        }
-        #endregion Reserve Urls, WebService and then WebApp
+    #region Remove Urls, WebApp and then WebService
+    $removeUrlParameters = @{
+        ReportServiceInstanceName = $ReportServiceInstanceName
+        Application = [WebApplicationType]::ReportServerWebApp
+        Url = ''
     }
 
+    $reservedUrlsAll[[WebApplicationType]::ReportServerWebApp] | ForEach-Object {
+        $removeUrlParameters.Url = $_
+        Remove-ReservedUrl @removeUrlParameters
+    }
+
+    $removeUrlParameters.Application = [WebApplicationType]::ReportServerWebService
+    $reservedUrlsAll[[WebApplicationType]::ReportServerWebService] | ForEach-Object {
+        $removeUrlParameters.Url = $_
+        Remove-ReservedUrl @removeUrlParameters
+    }
+    #endregion Remove Urls, WebApp and then WebService
+
+    #region Reserve Urls, WebService and then WebApp
+    $addUrlParameters = @{
+        ReportServiceInstanceName = $ReportServiceInstanceName
+        Application = [WebApplicationType]::ReportServerWebService
+        Url = ''
+    }
+
+    $reservedUrlsAll[[WebApplicationType]::ReportServerWebService] | ForEach-Object {
+        $addUrlParameters.Url = $_
+        Add-ReservedUrl @addUrlParameters
+    }
+
+    $addUrlParameters.Application = [WebApplicationType]::ReportServerWebApp
+    $reservedUrlsAll[[WebApplicationType]::ReportServerWebApp] | ForEach-Object {
+        $addUrlParameters.Url = $_
+        Add-ReservedUrl @addUrlParameters
+    }
+    #endregion Reserve Urls, WebService and then WebApp
+
     return $true
+}
+
+Function Add-ReservedUrl #Complete
+{
+    [CmdletBinding()]
+    [OutputType([System.Boolean])]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter(Mandatory = $true)]
+        [WebApplicationType]
+        $Application,
+
+        [Parameter(Mandatory = $true)]
+        [System.String]
+        $Url,
+
+        [Parameter()]
+        [System.Int32]
+        $LCID = (Get-Culture).LCID
+    )
+
+    Write-Verbose -Message (
+        $script:localizedData.AddingReservedUrl -f $Url, $Application
+    )
+
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
+    ).ConfigurationCIM
+
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $rsConfigurationCIMInstance
+        MethodName = 'ReserveURL'
+        Arguments = @{
+            Application = $Application.ToString()
+            LCID = $LCID
+            UrlString = $Url
+        }
+    }
+
+    $addUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+    if ($reportServerUrlsResult.Error)
+    {
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+            $invokeRsCimMethodParameters.MethodName, 9
+        )
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($addUrlResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.AddedReservedUrlsSuccess)
+    }
+}
+
+Function Remove-ReservedUrl #Complete
+{
+    [CmdletBinding()]
+    [OutputType([System.Boolean])]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter(Mandatory = $true)]
+        [WebApplicationType]
+        $Application,
+
+        [Parameter(Mandatory = $true)]
+        [System.String]
+        $Url,
+
+        [Parameter()]
+        [System.Int32]
+        $LCID = (Get-Culture).LCID
+    )
+
+    Write-Verbose -Message (
+        $script:localizedData.RemovingReservedUrl -f $Url, $Application
+    )
+
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
+    ).ConfigurationCIM
+
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $rsConfigurationCIMInstance
+        MethodName = 'RemoveURL'
+        Arguments = @{
+            Application = $Application.ToString()
+            LCID = $LCID
+            UrlString = $Url
+        }
+    }
+
+    $removeUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+    if ($reportServerUrlsResult.Error)
+    {
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+            $invokeRsCimMethodParameters.MethodName, 9
+        )
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($removeUrlResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.RemoveReservedUrlsSuccess)
+    }
 }
 
 Function Get-ReservedUrls #Complete
@@ -1686,7 +1717,7 @@ Function Get-ReservedUrls #Complete
     Write-Verbose -Message ($script:localizedData.AttemptingToGetUrls)
 
     $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
     $invokeRsCimMethodParameters = @{
@@ -1740,8 +1771,8 @@ Function Get-ReservedUrls #Complete
         }
 
         return @{
-            ReportServerWebService = $webServiceUrls
-            ReportServerWebApp     = $webAppUrls
+            [WebApplicationType]::ReportServerWebService = $webServiceUrls
+            [WebApplicationType]::ReportServerWebApp     = $webAppUrls
         }
     }
 }
