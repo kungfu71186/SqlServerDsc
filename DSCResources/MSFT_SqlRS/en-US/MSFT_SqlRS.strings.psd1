@@ -10,8 +10,6 @@ ConvertFrom-StringData -StringData @'
     RetrievingRSState                = Attempting to get the current Reporting Service state. (SRS0100)
     RetrievingInstanceUrls           = Attempting to get the Reporting Service Instance Url list. (SRS0101)
     RetrievingInstanceUrlsSuccess    = Successfully retrieved the Reporting Service Instance Url list. (SRS0102)
-    RetrievingModifiableUrls         = Attempting to get the Reporting Service Modifiable Url list. (SRS0103)
-    RetrievingModifiableUrlsSuccess  = Successfully retrieved the Reporting Service Modifiable Url list. (SRS0104)
     RetrievingScaleOutServers        = Attempting to get a list of the Reporting Service Scale-Out servers. (SRS0104)
     RetrievingScaleOutServersSuccess = Successfully retrieved the list of Reporting Service Scale-Out servers. (SRS0105)
     RetrivedServiceAccount           = Retrieved the service account of '{0}', which is a '{1}' logon type. (SRS0106)
@@ -57,13 +55,39 @@ ConvertFrom-StringData -StringData @'
     WindowsAccountNoCred          = The Service Account has a logon type of 'Windows', but the credentials were not specified. (SRS9103)
     WindowsAccountNoDomain        = The Service Account '{0}' has a logon type of 'Windows', which requires the domain name to specified. ['Localhost\\{0}' or 'Domain\\{0}']. (SRS9104)
 
-    # Invoke-GrantUserRights (9150)
+    # Get-GrantUserRightsScript (9150)
     GeneratingUserRightsScript        = Attempting generate the user rights script. (SRS9150)
     GenerateUserRightScriptParam      = Generating the SQL user rights script with the following parameters: UserName: '{0}', DatabaseName: '{1}', IsRemote: '{2}', IsWindowsUser: '{3}'. (SRS9151)
     GenerateUserRightScriptSuccessful = Successfully generated the SQL user rights script. (SRS9102)
 
     # Invoke-ChangeServiceAccount (9200)
-    InvokeChangeServiceAccount = Attempting to change the service account.
+    InvokeChangeServiceAccount           = Attempting to change the service account. (SRS9200)
+    ServiceFailedNotImplemented          = The Report Services service is currently '{0}'. The service needs to be running in order to change the service account. Please ensure the service '{1}' is currently running. (SRS9201)
+    ChangeServiceAccountBackupKeyFailed  = Failed to backup the encryption keys while changing the service account. The service account will not be changed. (SRS9202)
+    ChangeServiceAccountRestoreKeyFailed = Failed to restore the encryption keys while changing the service account to '{0}'. (SRS9203)
+    ChangeServiceFailedToStopService     = Failed to stop the Reporting Services service while changing the service account. The service account will not be changed. (SRS9204)
+    ChangeServiceFailedToStartService    = Failed to start the Report Services service with the new service account '{0}'. (SRS9205)
+
+    # Invoke-UpdateUrls (9250)
+    AttemptingToUpdateUrls    = Attempting to update the reserved Urls. (SRS9250)
+    RemovingReservedUrl       = Attempting to remove the url: '{0}' from the web application: '{1}'. (SRS9251)
+    RemoveReservedUrlsSuccess = Successfully removed the url. (SRS9252)
+    AddingReservedUrl         = Attempting to add the url: '{0}' from the web application: '{1}'. (SRS9253)
+    AddedReservedUrlsSuccess  = Successfully added the url. (SRS9254)
+
+    # Invoke-BackupEncryptionKey (9300)
+    AttemptingToBackupKey             = Attempting to backup the encryption keys. (SRS9300)
+    BackupEncryptionKeyNotImplemented = It appears we need to backup the encryption keys, but this feature is not yet implemented yet. (9345)
+
+    # Invoke-RestoreEncryptionKey (9350)
+    AttemptingToRestoreKey             = Attempting to restore the encryption keys. (SRS9350)
+    RestoreEncryptionKeyNotImplemented = It appears we need to restore the encryption keys, but this feature is not yet implemented yet. (9345)
+
+    # Get-ReservedUrls (9400)
+    AttemptingToGetUrls           = Attempting to get a list of the reserved urls. (SRS9400)
+    ReservedUrlsDontMatch         = The reserved Urls for the Web Service Manager and the Web Portal do not match. The service and web portal will start up properly, but the portal will report an error. (SRS9401)
+    RetrievingReservedUrls        = Attempting to get the Reporting Service Modifiable Url list. (SRS9402)
+    RetrievingReservedUrlsSuccess = Successfully retrieved the Reporting Service Modifiable Url list. (SRS9403)
 
     # MSFT_ReportServiceSkuUtils (SRS0600)
     RSSkuTypeNotInitialized       = It appears that the Reporting Services sku type hasn't been defined yet or not found. This should be set to one of the following types: {0}. (SRS0600)

@@ -102,7 +102,7 @@ Function Get-TargetResource #Complete
     $configurationCIMObject = $reportingServicesCIMObjects.ConfigurationCIM
 
     $getTargetResourceResult = [ordered]@{
-        ReportServiceInstanceName         = $ReportServiceInstanceName
+        ReportServiceInstanceName = $ReportServiceInstanceName
 
         # Service Account
         ServiceAccount           = $null
@@ -111,9 +111,9 @@ Function Get-TargetResource #Complete
         ServiceAccountActual     = $configurationCIMObject.WindowsServiceIdentityActual
 
         # Report Server manager
-        ReportManagerVirtualDirectory     = $configurationCIMObject.VirtualDirectoryReportManager
-        ReportManagerUrls                 = @()
-        ReportServerInstanceURLs          = @()
+        ReportManagerVirtualDirectory = $configurationCIMObject.VirtualDirectoryReportManager
+        ReportManagerUrls             = @()
+        ReportServerInstanceURLs      = @()
 
         # Report Server Web portal
         ReportWebPortalVirtualDirectory   = $configurationCIMObject.VirtualDirectoryReportServer
@@ -239,60 +239,33 @@ Function Get-TargetResource #Complete
     #endregion Get Report Server Manager Urls
 
     #region Get Report Server Manager and Web Portal Urls that are modifiable
-    $invokeRsCimMethodParameters = @{
-        CimInstance = $configurationCIMObject
-        MethodName = 'ListReservedURLs'
-    }
-
-    Write-Verbose -Message ($script:localizedData.RetrievingModifiableUrls)
-    $reportServerUrlsResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
-    if ($reportServerUrlsResult.Error)
-    {
-        $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f ("Get-CimInstance $arguments", 1)
-        New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
-    }
-    else
-    {
-        Write-Verbose -Message ($script:localizedData.RetrievingModifiableUrlsSuccess)
-
-        $reportServerUrls = $reportServerUrlsResult.Result
-        # Because GetReportServerUrls returns all urls for all web services, we need to match up
-        # which urls belong to ReportServerWebService and ReportServerWebApp
-        $reportServeUrlList = @{}
-
-        for ( $i = 0; $i -lt $reportServerUrls.Application.Count; ++$i )
-        {
-            $application = ($reportServerUrls.Application)[$i]
-            $url = ($reportServerUrls.UrlString)[$i]
-            $reportServeUrlList[$application] += @($url)
-        }
-
-        $getTargetResourceResult['ReportManagerUrls'] = $reportServeUrlList.ReportServerWebService
-        $getTargetResourceResult['ReportWebPortalUrls'] = $reportServeUrlList.ReportServerWebApp
-    }
+    $reservedUrls = Get-ReservedUrls -ReportServiceInstanceName $ReportServiceInstanceName
+    $getTargetResourceResult['ReportManagerUrls'] = $reservedUrls.ReportServerWebService
+    $getTargetResourceResult['ReportWebPortalUrls'] = $reservedUrls.ReportServerWebApp
     #endregion Get Report Server Manager and Web Portal Urls that are modifiable
 
     #region Get list of servers in cluster
-    $scaleOutServersParameters = @{
-        CimInstance = $configurationCIMObject
-        MethodName = 'ListReportServersInDatabase'
-    }
+    if ($configurationCIMObject.IsInitialized)
+    {
+        $scaleOutServersParameters = @{
+            CimInstance = $configurationCIMObject
+            MethodName = 'ListReportServersInDatabase'
+        }
 
-    Write-Verbose -Message ($script:localizedData.RetrievingScaleOutServers)
-    $reportServerUrlsResult = Invoke-RsCimMethod @scaleOutServersParameters
-    if ($reportServerUrlsResult.Error)
-    {
-        $arguments = Convert-HashtableToArguments $cimReportServicesParameters
-        $errorMessage = $script:localizedData.IssueRetrievingCIMInstance -f (
-            "Get-CimInstance $arguments", 1
-        )
-        New-InvalidResultException -Message $errorMessage -ErrorRecord ($instanceNameResult.Result)
-    }
-    else
-    {
-        Write-Verbose -Message ($script:localizedData.RetrievingScaleOutServersSuccess)
-        $getTargetResourceResult['ScaleOutServers'] =  $scaleOutServersResult.Result.MachineNames
+        Write-Verbose -Message ($script:localizedData.RetrievingScaleOutServers)
+        $reportServerUrlsResult = Invoke-RsCimMethod @scaleOutServersParameters
+        if ($reportServerUrlsResult.Error)
+        {
+            $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+                $invokeRsCimMethodParameters.MethodName, 1
+            )
+            New-InvalidResultException -Message $errorMessage -ErrorRecord ($reportServerUrlsResult.Result)
+        }
+        else
+        {
+            Write-Verbose -Message ($script:localizedData.RetrievingScaleOutServersSuccess)
+            $getTargetResourceResult['ScaleOutServers'] =  $scaleOutServersResult.Result.MachineNames
+        }
     }
     #endregion Get list of servers in cluster
 
@@ -385,7 +358,7 @@ Function Test-TargetResource #Complete
         $UseServiceWithRemoteDatabase = $false
     )
 
-    Write-Verbose -Message ($LocalizedData.TestingDesiredState -f $ReportServiceInstanceName)
+    Write-Verbose -Message ($script:localizedData.TestingDesiredState -f $ReportServiceInstanceName)
 
     $compareParameters = @{} + $PSBoundParameters
     # Need to set these parameters to compare if users are using the default parameter values
@@ -409,12 +382,12 @@ Function Test-TargetResource #Complete
 
     if ($compareTargetResourceNonCompliant)
     {
-        Write-Verbose -Message ($LocalizedData.RSNotInDesiredState -f $ReportServiceInstanceName)
+        Write-Verbose -Message ($script:localizedData.RSNotInDesiredState -f $ReportServiceInstanceName)
         return $false
     }
     else
     {
-        Write-Verbose -Message ($LocalizedData.RSInDesiredState -f $ReportServiceInstanceName)
+        Write-Verbose -Message ($script:localizedData.RSInDesiredState -f $ReportServiceInstanceName)
         return $true
     }
 }
@@ -530,7 +503,7 @@ Function Set-TargetResource
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
     ).ConfigurationCIM
 
-    Write-Verbose -Message ($LocalizedData.SettingNonDesiredStateParameters -f $ReportServiceInstanceName)
+    Write-Verbose -Message ($script:localizedData.SettingNonDesiredStateParameters -f $ReportServiceInstanceName)
     $lcid = (Get-Culture).LCID
 
     <#
@@ -810,7 +783,7 @@ Function Compare-TargetResourceState #Complete
         $UseServiceWithRemoteDatabase
     )
 
-    Write-Verbose -Message ($LocalizedData.ComparingSpecifiedParameters -f $ReportServiceInstanceName)
+    Write-Verbose -Message ($script:localizedData.ComparingSpecifiedParameters -f $ReportServiceInstanceName)
 
     $getTargetResourceResult = Get-TargetResource -ReportServiceInstanceName $ReportServiceInstanceName
     $compareTargetResource = @()
@@ -942,7 +915,7 @@ function Get-ReportingServicesCIM #Complete
         $ReportServiceInstanceName
     )
 
-    Write-Verbose -Message ($LocalizedData.GetReportingServicesCIM)
+    Write-Verbose -Message ($script:localizedData.GetReportingServicesCIM)
 
     $rootReportServerNameSpace = 'ROOT\Microsoft\SqlServer\ReportServer'
     if (-not $PSBoundParameters.ContainsKey('ReportServiceInstanceName'))
@@ -1020,7 +993,6 @@ function Get-ReportingServicesCIM #Complete
         Namespace   = '{0}\{1}\{2}' -f $rootReportServerNameSpace, $instanceName, $instanceVersion
         Class       = 'MSReportServer_Instance'
     }
-    write-host $cimMSReportServerInstance.Values
 
     $cimReportServerInstanceResults = Get-RsCimInstance @cimMSReportServerInstance
 
@@ -1081,7 +1053,7 @@ Function Invoke-RsCimMethod #Complete
         $Arguments
     )
 
-    Write-Verbose -Message ($LocalizedData.InvokingRsCimMethod)
+    Write-Verbose -Message ($script:localizedData.InvokingRsCimMethod)
 
     $errorCodes = @{
         [int]0x80040211 = 'InvalidAssociation' # -2147220975
@@ -1106,7 +1078,7 @@ Function Invoke-RsCimMethod #Complete
         if ($errorCodes.ContainsKey($invokeCimMethodResult.HRESULT))
         {
             $errorMessage = $errorCodes[$invokeCimMethodResult.HRESULT]
-            New-InvalidOperationException -Message ($LocalizedData.$errorMessage -f $invokeCimMethodResult.HRESULT)
+            New-InvalidOperationException -Message ($script:localizedData.$errorMessage -f $invokeCimMethodResult.HRESULT)
         }
         elseif ($invokeCimMethodResult.HRESULT -ne 0)
         {
@@ -1116,7 +1088,8 @@ Function Invoke-RsCimMethod #Complete
                     The returned object property ExtendedErrors is an array
                     so that needs to be concatenated.
                 #>
-                $errorMessage = $invokeCimMethodResult.ExtendedErrors -join ';'
+                $extendedErrors = $invokeCimMethodResult.ExtendedErrors -join ';'
+                $errorMessage = 'HRESULT: {0}, {1}' -f $invokeCimMethodResult.HRESULT, $extendedErrors
             }
             else
             {
@@ -1153,7 +1126,7 @@ Function Get-RsCimInstance #Complete
         $Class
     )
 
-    Write-Verbose -Message ($LocalizedData.GetRsCimInstance)
+    Write-Verbose -Message ($script:localizedData.GetRsCimInstance)
 
     $getCimInstanceParameters = @{
         Class = $Class
@@ -1185,6 +1158,8 @@ Function Get-RsCimInstance #Complete
 
 Function Invoke-ChangeServiceAccount
 {
+    [CmdletBinding()]
+    [OutputType([Void])]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -1208,7 +1183,7 @@ Function Invoke-ChangeServiceAccount
         $DatabaseConnectCredential
     )
 
-    Write-Verbose -Message ($LocalizedData.InvokeChangeServiceAccount)
+    Write-Verbose -Message ($script:localizedData.InvokeChangeServiceAccount)
 
     # We need to get read-only values
     $rsConfigurationCIMInstance = (
@@ -1227,44 +1202,43 @@ Function Invoke-ChangeServiceAccount
      9. Restore Encryption key if database was initialized and we have a backup
     #>
 
+    #region Check if RS service is running
     $serviceName = $rsConfigurationCIMInstance.ServiceName
-    if ((Get-Service -Name $serviceName).Status -ne 'Running' -and $rsConfigurationCIMInstance.IsInitialized)
+    $serviceStatus = (Get-Service -Name $serviceName).Status
+    if ($serviceStatus -ne 'Running' -and $rsConfigurationCIMInstance.IsInitialized)
     {
-        #TODO:
-        # THe issue i think here is we need to be able to connect to the database
-        # to get the keys if database is created and back them up. If the service is not
-        # running we cant do that. If we update the service account without doing this
-        # will it break?
-        # Start the windows service
         try
         {
             Start-Service $serviceName -ErrorAction Stop
         }
         catch
         {
-            #TODO: throw error can't stop service
-            throw
+            $errorMessage = ($script:localizedData.ServiceFailedNotImplemented -f $serviceStatus, $serviceName)
+            New-InvalidOperationException -Message $errorMessage
         }
     }
+    #endregion Check if RS service is running
 
+    #region Backup Encryption Key
     $backupEncryptionKey = $false
     if ($rsConfigurationCIMInstance.IsInitialized)
     {
         # Need to backup key
         #TODO: add new parameter for password?
-        # $backupStatus = Invoke-BackupEncryptionKey
+        $backupKeyStatus = Invoke-BackupEncryptionKey
 
-        if($backupStatus)
+        if($backupKeyStatus)
         {
             $backupEncryptionKey = $true
         }
         else
         {
-            #TODO: throw error, backup failed
-            throw
+            New-InvalidOperationException -Message ($script:localizedData.ChangeServiceAccountBackupKeyFailed)
         }
     }
+    #endregion Backup Encryption Key
 
+    #region Stop RS Service
     # Stop the windows service
     try
     {
@@ -1272,19 +1246,19 @@ Function Invoke-ChangeServiceAccount
     }
     catch
     {
-        #TODO: throw error can't stop service
-        throw
+        New-InvalidOperationException -Message ($script:localizedData.ChangeServiceFailedToStopService)
     }
+    #endregion Stop RS Service
 
     #region Update the service account
     # Will throw errors within the function if it fails
     $setServiceAccountParameters = @{
         ReportServiceInstanceName = $ReportServiceInstanceName
         ServiceAccount            = $ServiceAccount
-        ServiceAccountLogonType  = $ServiceAccountLogonType
+        ServiceAccountLogonType   = $ServiceAccountLogonType
     }
 
-    Invoke-SetServiceAccount @setServiceAccountParameters
+    $newServiceAccount = Invoke-SetServiceAccount @setServiceAccountParameters
     #endregion Update the service account
 
     #region Update the user permissions on the database
@@ -1304,10 +1278,10 @@ Function Invoke-ChangeServiceAccount
         <#
          Database does exist and we are using the service account
          as the reporting services database user, so we need to update
-         permissions. We are using is a service account which is a windows
+         permissions. We are using a service account which is a windows
          account and not a sql account, so IsWindowsUser is false, but then
-         IsRemote is automatically false. The cim method call will return an
-         error otherwise
+         IsRemote is automatically false as well. The cim method call will
+         return an error otherwise.
         #>
         $grantUserRightsParameters = @{
             UserName      = $rsConfigurationCIMInstance.WindowsServiceIdentityActual
@@ -1318,36 +1292,52 @@ Function Invoke-ChangeServiceAccount
 
         $databasUserPermissionsScript = Get-GrantUserRightsScript @grantUserRightsParameters
     }
+
+    #TODO: run sql script
     #endregion Update the user permissions on the database
 
-    Write-host start server
-    # Start the windows service
+    #region Start the Reporting services service
     try
     {
         Start-Service $serviceName -ErrorAction Stop
     }
     catch
     {
-        #TODO: throw error can't stop service
-        throw
+        New-InvalidOperationException -Message (
+            $script:localizedData.ChangeServiceFailedToStartService -f $newServiceAccount
+        )
     }
+    #endregion Start the Reporting services service
 
-    #TODO: implement Invoke-UpdateUrls, use listreservedurls to remove and update
-    # Will throw errors within the function if it fails
-    #Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
+    #region Update Reserved Urls
+    $updateUrlsStatus = Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
+    #endregion Update Reserved Urls
 
+    #region Restore encryption keys
     if ($backupEncryptionKey){
         #TODO: Invoke-RestoreEncryptionKeys
         # restore keys
         # Need file name and password, should be same parameters an encrypt
-        #Invoke-RestoreEncryptionKeys
-    }
+        $restoreKeyStatus = Invoke-RestoreEncryptionKey
 
-    #Complete
+        if($backupKeyStatus)
+        {
+            $backupEncryptionKey = $true
+        }
+        else
+        {
+            New-InvalidOperationException -Message (
+                $script:localizedData.ChangeServiceAccountRestoreKeyFailed -f $newServiceAccount
+            )
+        }
+    }
+    #endregion Restore encryption keys
 }
 
 Function Invoke-SetServiceAccount #Complete
 {
+    [CmdletBinding()]
+    [OutputType([System.String])]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -1363,7 +1353,7 @@ Function Invoke-SetServiceAccount #Complete
         $ServiceAccountLogonType
     )
 
-    Write-Verbose -Message ($LocalizedData.SettingServiceAccount)
+    Write-Verbose -Message ($script:localizedData.SettingServiceAccount)
 
     $rsConfigurationCIMInstance = (
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
@@ -1409,7 +1399,7 @@ Function Invoke-SetServiceAccount #Complete
         $serviceAccountPasswordToSet = ''
     }
 
-    Write-Verbose -Message ($LocalizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $ServiceAccountLogonType)
+    Write-Verbose -Message ($script:localizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $ServiceAccountLogonType)
 
     $invokeRsCimMethodParameters = @{
         CimInstance = $rsConfigurationCIMInstance
@@ -1433,11 +1423,14 @@ Function Invoke-SetServiceAccount #Complete
     else
     {
         Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
+        return $serviceAccountToSet
     }
 }
 
 Function Get-GrantUserRightsScript #Complete
 {
+    [CmdletBinding()]
+    [OutputType([System.String])]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -1461,7 +1454,7 @@ Function Get-GrantUserRightsScript #Complete
         $IsWindowsUser
     )
 
-    Write-Verbose -Message ($LocalizedData.GeneratingUserRightsScript)
+    Write-Verbose -Message ($script:localizedData.GeneratingUserRightsScript)
 
     $rsConfigurationCIMInstance = (
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
@@ -1480,7 +1473,7 @@ Function Get-GrantUserRightsScript #Complete
     }
 
     Write-Verbose -Message (
-        $LocalizedData.GenerateUserRightScriptParam -f $UserName, $DatabaseName, $IsRemote, $IsWindowsUser
+        $script:localizedData.GenerateUserRightScriptParam -f $UserName, $DatabaseName, $IsRemote, $IsWindowsUser
     )
     $invokeRsCimMethodResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
 
@@ -1498,6 +1491,261 @@ Function Get-GrantUserRightsScript #Complete
 
     return $invokeRsCimMethodResult.Result.Script
 }
+
+Function Invoke-BackupEncryptionKey
+{
+    [CmdletBinding()]
+    [OutputType([System.Boolean])]
+    param
+    (
+
+    )
+
+    Write-Verbose -Message ($script:localizedData.AttemptingToBackupKey)
+
+    New-NotImplementedException -Message ($script:localizedData.BackupEncryptionKeyNotImplemented)
+}
+
+Function Invoke-RestoreEncryptionKey
+{
+    [CmdletBinding()]
+    [OutputType([System.Boolean])]
+    param
+    (
+
+    )
+
+    Write-Verbose -Message ($script:localizedData.AttemptingToRestoreKey)
+
+    New-NotImplementedException -Message ($script:localizedData.RestoreEncryptionKeyNotImplemented)
+}
+
+Function Invoke-UpdateUrls #Complete with follow-up
+{
+    [CmdletBinding()]
+    [OutputType([System.Boolean])]
+    param
+    (
+        [Parameter(Mandatory = $true)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName,
+
+        [Parameter()]
+        [System.String[]]
+        $ReservedUrls
+
+    )
+
+    Write-Verbose -Message ($script:localizedData.AttemptingToUpdateUrls)
+
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+    ).ConfigurationCIM
+
+    if (-not $PSBoundParameters.ContainsKey('ReservedUrls'))
+    {
+        <#
+          The reserved urls are not specified, so we need to get current
+          reserved urls and update the urls with the ones that currently exist.
+          This could be due to change of service account as to why we would want
+          to do this.
+
+          TODO: Should we just set ReservedUrls and interate through that, this means that
+          if for some reason the webapp and service do differ, then they will now be the same
+          after the fact
+        #>
+        $reservedUrlsAll = Get-ReservedUrls -ReportServiceInstanceName $ReportServiceInstanceName
+
+        $lcid = (Get-Culture).LCID
+
+        #region Remove Urls, WebApp and then WebService
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $rsConfigurationCIMInstance
+            MethodName = 'RemoveURL'
+            Arguments = @{
+                Application = 'ReportServerWebApp'
+                LCID = $lcid
+                UrlString = ''
+            }
+        }
+
+        $reservedUrlsAll.ReportServerWebApp | ForEach-Object {
+            Write-Verbose -Message (
+                $script:localizedData.RemovingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
+            )
+
+            $invokeRsCimMethodParameters.Arguments.UrlString = $_
+            $removeUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+            if ($reportServerUrlsResult.Error)
+            {
+                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+                    $invokeRsCimMethodParameters.MethodName, 9
+                )
+                New-InvalidResultException -Message $errorMessage -ErrorRecord ($removeUrlResult.Result)
+            }
+            else
+            {
+                Write-Verbose -Message ($script:localizedData.RemoveReservedUrlsSuccess)
+            }
+        }
+
+        $invokeRsCimMethodParameters.Arguments.Application = 'ReportServerWebService'
+        $reservedUrlsAll.ReportServerWebService | ForEach-Object {
+            Write-Verbose -Message (
+                $script:localizedData.RemovingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
+            )
+
+            $invokeRsCimMethodParameters.Arguments.UrlString = $_
+            $removeUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+            if ($reportServerUrlsResult.Error)
+            {
+                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+                    $invokeRsCimMethodParameters.MethodName, 9
+                )
+                New-InvalidResultException -Message $errorMessage -ErrorRecord ($removeUrlResult.Result)
+            }
+            else
+            {
+                Write-Verbose -Message ($script:localizedData.RemoveReservedUrlsSuccess)
+            }
+        }
+        #endregion Remove Urls, WebApp and then WebService
+
+        #region Reserve Urls, WebService and then WebApp
+        $invokeRsCimMethodParameters = @{
+            CimInstance = $rsConfigurationCIMInstance
+            MethodName = 'ReserveURL'
+            Arguments = @{
+                Application = 'ReportServerWebService'
+                LCID = $lcid
+                UrlString = ''
+            }
+        }
+
+        $reservedUrlsAll.ReportServerWebService | ForEach-Object {
+            Write-Verbose -Message (
+                $script:localizedData.AddingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
+            )
+
+            $invokeRsCimMethodParameters.Arguments.UrlString = $_
+            $addUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+            if ($reportServerUrlsResult.Error)
+            {
+                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+                    $invokeRsCimMethodParameters.MethodName, 9
+                )
+                New-InvalidResultException -Message $errorMessage -ErrorRecord ($addUrlResult.Result)
+            }
+            else
+            {
+                Write-Verbose -Message ($script:localizedData.AddedReservedUrlsSuccess)
+            }
+        }
+
+        $invokeRsCimMethodParameters.Arguments.Application = 'ReportServerWebApp'
+        $reservedUrlsAll.ReportServerWebApp | ForEach-Object {
+            Write-Verbose -Message (
+                $script:localizedData.AddingReservedUrl -f $_, $invokeRsCimMethodParameters.Arguments.Application
+            )
+
+            $invokeRsCimMethodParameters.Arguments.UrlString = $_
+            $addUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+
+            if ($reportServerUrlsResult.Error)
+            {
+                $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+                    $invokeRsCimMethodParameters.MethodName, 9
+                )
+                New-InvalidResultException -Message $errorMessage -ErrorRecord ($addUrlResult.Result)
+            }
+            else
+            {
+                Write-Verbose -Message ($script:localizedData.AddedReservedUrlsSuccess)
+            }
+        }
+        #endregion Reserve Urls, WebService and then WebApp
+    }
+
+    return $true
+}
+
+Function Get-ReservedUrls #Complete
+{
+    [CmdletBinding()]
+    [OutputType([System.Collections.Hashtable])]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName
+    )
+
+    Write-Verbose -Message ($script:localizedData.AttemptingToGetUrls)
+
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+    ).ConfigurationCIM
+
+    $invokeRsCimMethodParameters = @{
+        CimInstance = $rsConfigurationCIMInstance
+        MethodName = 'ListReservedURLs'
+    }
+
+    Write-Verbose -Message ($script:localizedData.RetrievingReservedUrls)
+    $reportServerUrlsResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
+    if ($reportServerUrlsResult.Error)
+    {
+        $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
+            $invokeRsCimMethodParameters.MethodName, 9
+        )
+        New-InvalidResultException -Message $errorMessage -ErrorRecord ($reportServerUrlsResult.Result)
+    }
+    else
+    {
+        Write-Verbose -Message ($script:localizedData.RetrievingReservedUrlsSuccess)
+
+        $reportServerUrls = $reportServerUrlsResult.Result
+        # Because GetReportServerUrls returns all urls for all web services, we need to match up
+        # which urls belong to ReportServerWebService and ReportServerWebApp
+        $reportServeUrlList = @{}
+
+        $webServiceUrls = @()
+        $webAppUrls = @()
+        for ( $i = 0; $i -lt $reportServerUrls.Application.Count; ++$i )
+        {
+            $application = ($reportServerUrls.Application)[$i]
+            $url = ($reportServerUrls.UrlString)[$i]
+            $reportServeUrlList[$application] += @($url)
+        }
+
+        $webServiceUrls = $reportServeUrlList.ReportServerWebService
+        $webAppUrls = $reportServeUrlList.ReportServerWebApp
+
+        <#
+         If the web portal urls exist and there is a difference between the
+         manager and web portal urls, then this is a problem. The service will
+         start and everything else will be fine, but you will get an error when
+         you open the reporting services web portal
+        #>
+        if (-not [String]::IsNullOrEmpty($webServiceUrls) -and -not [String]::IsNullOrEmpty($webAppUrls))
+        {
+            $difference = Compare-Object -ReferenceObject $webServiceUrls -DifferenceObject $webAppUrls
+            if ($difference)
+            {
+                Write-Warning ($script:localizedData.ReservedUrlsDontMatch)
+            }
+        }
+
+        return @{
+            ReportServerWebService = $webServiceUrls
+            ReportServerWebApp     = $webAppUrls
+        }
+    }
+}
+
 
 <#
     .NOTES
