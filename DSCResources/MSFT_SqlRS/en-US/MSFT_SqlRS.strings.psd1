@@ -43,7 +43,6 @@ ConvertFrom-StringData -StringData @'
 
     # Invoke-RsCimMethod (SRS9050)
     InvokingRsCimMethod = Attempting to invoke a method on the CIM Instance. (SRS9050)
-    InvalidAssociation  = HRESULT: {0}. Could be due an issue when trying to retrieve the SID of a Windows user. (SRS9051)
 
     # Get-RsCimInstance (SRS9075)
     GetRsCimInstance = Attempting to retrieve a CIM Instance. (SRS9075)
@@ -74,6 +73,7 @@ ConvertFrom-StringData -StringData @'
     # Add-ReservedUrl (9260)
     AddingReservedUrl         = Attempting to add the url: '{0}' from the web application: '{1}'. (SRS9260)
     AddedReservedUrlsSuccess  = Successfully added the url. (SRS9261)
+    ReservedUrlAlreadyExists  = The reserved url '{0}' already exists. The url will be removed and re-added. (SRS9262)
 
     # Remove-ReservedUrl (9270)
     RemovingReservedUrl       = Attempting to remove the url: '{0}' from the web application: '{1}'. (SRS970)

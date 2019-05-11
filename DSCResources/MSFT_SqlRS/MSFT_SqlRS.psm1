@@ -1061,9 +1061,75 @@ Function Invoke-RsCimMethod #Complete
 
     Write-Verbose -Message ($script:localizedData.InvokingRsCimMethod)
 
-    $errorCodes = @{
-        [int]0x80040211 = 'InvalidAssociation' # -2147220975
-    }
+    <#
+    Success = 0,
+    CantConnectCatalog = 2147746305, // 0x80040201
+    ServiceNotActivated = 2147746306, // 0x80040202
+    ServiceDisabled = 2147746307, // 0x80040203
+    UnexpectedDatabaseError = 2147746308, // 0x80040204
+    UnexpectedDatabaseResult = 2147746309, // 0x80040205
+    AlreadyActivated = 2147746310, // 0x80040206
+    NotAnnounced = 2147746311, // 0x80040207
+    NotAdmin = 2147746312, // 0x80040208
+    VirtualDirectoryAlreadyExists = 2147746316, // 0x8004020C
+    VirtualDirectoryInvalid = 2147746317, // 0x8004020D
+    InvalidIISPath = 2147746318, // 0x8004020E
+    IISNotInstalled = 2147746319, // 0x8004020F
+    AspNetNotRegistered = 2147746320, // 0x80040210
+    InvalidUser = 2147746321, // 0x80040211
+    InsufficientUserPrivilege = 2147746322, // 0x80040212
+    SqlAdminUserInsufficientPrivilege = 2147746323, // 0x80040213
+    GrantLoginToPasswordRequired = 2147746324, // 0x80040214
+    RsexecRoleDoesNotExist = 2147746325, // 0x80040215
+    WindowsServiceAccountNotSet = 2147746326, // 0x80040216
+    WebServiceAccountNotSet = 2147746327, // 0x80040217
+    SslCertificateNotFound = 2147746328, // 0x80040218
+    ConfigurationFileNotFound = 2147746329, // 0x80040219
+    InvalidPortNumber = 2147746330, // 0x8004021A
+    InvalidUrlParameterSet = 2147746331, // 0x8004021B
+    InvalidSecureConnectionLevel = 2147746332, // 0x8004021C
+    IllformedAccountString = 2147746333, // 0x8004021D
+    BadCredentialsType = 2147746334, // 0x8004021E
+    BadApplicationPool = 2147746335, // 0x8004021F
+    BadVersion = 2147746336, // 0x80040220
+    IllformedVersionString = 2147746337, // 0x80040221
+    BadLcid = 2147746338, // 0x80040222
+    ApplicationPoolAlreadyExists = 2147746339, // 0x80040223
+    OsNotSupported = 2147746340, // 0x80040224
+    BadWebsiteConfigruation = 2147746341, // 0x80040225
+    BadConfigurationFile = 2147746342, // 0x80040226
+    SharePointNotInstalled = 2147746343, // 0x80040227
+    MustCreateVirtualDirectory = 2147746344, // 0x80040228
+    FailedToLoadResources = 2147746345, // 0x80040229
+    LocalServiceIsLocalOnly = 2147746346, // 0x8004022A
+    FailedToEnumerateInstances = 2147746347, // 0x8004022B
+    InvalidParameter = 2147746348, // 0x8004022C
+    BadApplicationPoolName = 2147746349, // 0x8004022D
+    MustUseDefaultPort = 2147746350, // 0x8004022E
+    WebsiteNotListeningOnSpecifiedPort = 2147746351, // 0x8004022F
+    NotSupportedInSharePointMode = 2147746352, // 0x80040230
+    NotSupportedInNativeMode = 2147746353, // 0x80040231
+    RsSharePointObjectModelNotInstalled = 2147746354, // 0x80040232
+    RsSharePointError = 2147746355, // 0x80040233
+    RsServerConfigurationError = 2147746356, // 0x80040234
+    RsUrlAlreadyReservedDifferentName = 2147746357, // 0x80040235
+    RsMustDefineApplicationFirst = 2147746358, // 0x80040236
+    RsIpAddressNotFound = 2147746359, // 0x80040237
+    RsSSLBindingConflict = 2147746360, // 0x80040238
+    RsSSLCertificateNotRegistered = 2147746362, // 0x8004023A
+    RsInvalidApplication = 2147746363, // 0x8004023B
+    RsURLAlreadyReserved = 2147746364, // 0x8004023C
+    RsURLNotReserved = 2147746365, // 0x8004023D
+    RsURLMustNotExist = 2147746366, // 0x8004023E
+    RsDeliveryExtensionNotFound = 2147746367, // 0x8004023F
+    RsLocalServiceNotAllowedXP = 2147746368, // 0x80040240
+    RsInvalidSSLCertificate = 2147746369, // 0x80040241
+    RsBadExtendedProtectionLevelType = 2147746370, // 0x80040242
+    RsBadExtendedProtectionScenarioType = 2147746371, // 0x80040243
+    RsMustDefineAuthenticationFirst = 2147746372, // 0x80040244
+    RPCServerNotListening = 2147944115, // 0x800706B3
+    UnknownError = 4294967295, // 0xFFFFFFFF
+    #>
 
     $invokeCimMethodParameters = @{
         MethodName = $MethodName
@@ -1077,16 +1143,18 @@ Function Invoke-RsCimMethod #Complete
         $invokeCimMethodParameters['Arguments'] = $Arguments
     }
 
+    $cimMethodHResult = 0
+    $cimMethodErrorMessage = ''
+    $cimMethodReturnValue = $true
+
     try
     {
         $invokeCimMethodResult = $CimInstance | Invoke-CimMethod @invokeCimMethodParameters -Verbose:$false
+        $cimMethodHResult      = $invokeCimMethodResult.HRESULT
+        $cimMethodErrorMessage = $invokeCimMethodResult.Error
+        $cimMethodReturnValue  = $invokeCimMethodResult.ReturnValue
 
-        if ($errorCodes.ContainsKey($invokeCimMethodResult.HRESULT))
-        {
-            $errorMessage = $errorCodes[$invokeCimMethodResult.HRESULT]
-            New-InvalidOperationException -Message ($script:localizedData.$errorMessage -f $invokeCimMethodResult.HRESULT)
-        }
-        elseif ($invokeCimMethodResult.HRESULT -ne 0)
+        if ($cimMethodHResult -ne 0)
         {
             if ($invokeCimMethodResult | Get-Member -Name 'ExtendedErrors')
             {
@@ -1095,11 +1163,24 @@ Function Invoke-RsCimMethod #Complete
                     so that needs to be concatenated.
                 #>
                 $extendedErrors = $invokeCimMethodResult.ExtendedErrors -join ';'
-                $errorMessage = 'HRESULT: {0}, {1}' -f $invokeCimMethodResult.HRESULT, $extendedErrors
+
+                $errorMessage = 'HRESULT: {0}' -f $cimMethodHResult
+
+                if (-not [String]::IsNullOrEmpty($cimMethodErrorMessage))
+                {
+                    $errorMessage = '{0}, {1}' -f $errorMessage, $cimMethodErrorMessage
+                }
+
+                $errorMessage = '{0}, {1}' -f $errorMessage, $extendedErrors
             }
             else
             {
-                $errorMessage = 'HRESULT: {0}' -f $invokeCimMethodResult.HRESULT
+                $errorMessage = 'HRESULT: {0}' -f $cimMethodHResult
+
+                if (-not [String]::IsNullOrEmpty($cimMethodErrorMessage))
+                {
+                    $errorMessage = '{0}, {1}' -f $errorMessage, $cimMethodErrorMessage
+                }
             }
 
             New-InvalidOperationException -Message $errorMessage
@@ -1112,8 +1193,11 @@ Function Invoke-RsCimMethod #Complete
     }
 
     return @{
-        Result = $invokeCimMethodResult
-        Error = $errorResult
+        Result       = $invokeCimMethodResult
+        Error        = $errorResult
+        ReturnValue  = $cimMethodReturnValue
+        ErrorMessage = $cimMethodErrorMessage
+        HRESULT      = $cimMethodHResult
     }
 }
 
@@ -1146,9 +1230,17 @@ Function Get-RsCimInstance #Complete
         $getCimInstanceParameters['Namespace'] = $Namespace
     }
 
+    $cimMethodHResult = 0
+    $cimMethodErrorMessage = ''
+    $cimMethodReturnValue = $true
+
     try
     {
-        $getCimInstanceResult = Get-CimInstance @getCimInstanceParameters
+        $getCimInstanceResult  = Get-CimInstance @getCimInstanceParameters
+        $cimMethodHResult      = $getCimInstanceResult.HRESULT
+        $cimMethodErrorMessage = $getCimInstanceResult.Error
+        $cimMethodReturnValue  = $getCimInstanceResult.ReturnValue
+
     }
     catch
     {
@@ -1157,8 +1249,11 @@ Function Get-RsCimInstance #Complete
     }
 
     return @{
-        Result = $getCimInstanceResult
-        Error = $errorResult
+        Result       = $getCimInstanceResult
+        Error        = $errorResult
+        ReturnValue  = $cimMethodReturnValue
+        ErrorMessage = $cimMethodErrorMessage
+        HRESULT      = $cimMethodHResult
     }
 }
 
@@ -1270,7 +1365,7 @@ Function Invoke-ChangeServiceAccount
     #region Update the user permissions on the database
     # Refresh the CIM Configuration instance
     $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
     $rsDatabaseLogonTypeInt = $rsConfigurationCIMInstance.DatabaseLogonType
@@ -1316,7 +1411,7 @@ Function Invoke-ChangeServiceAccount
     #endregion Start the Reporting services service
 
     #region Update Reserved Urls
-    $updateUrlsStatus = Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
+    Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
     #endregion Update Reserved Urls
 
     #region Restore encryption keys
@@ -1529,7 +1624,7 @@ Function Invoke-RestoreEncryptionKey
 Function Invoke-UpdateUrls #Complete
 {
     [CmdletBinding()]
-    [OutputType([System.Boolean])]
+    [OutputType([Void])]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -1587,8 +1682,6 @@ Function Invoke-UpdateUrls #Complete
         Add-ReservedUrl @addUrlParameters
     }
     #endregion Reserve Urls, WebService and then WebApp
-
-    return $true
 }
 
 Function Add-ReservedUrl #Complete
@@ -1634,8 +1727,15 @@ Function Add-ReservedUrl #Complete
 
     $addUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
 
-    if ($reportServerUrlsResult.Error)
+    if ($addUrlResult.HRESULT -eq 0x8004023C) # -2147220932
     {
+        Write-Verbose -Message ($script:localizedData.ReservedUrlAlreadyExists -f $Url)
+        Remove-ReservedUrl @PSBoundParameters
+        Add-ReservedUrl @PSBoundParameters
+    }
+    elseif ($addUrlResult.Error)
+    {
+
         $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
             $invokeRsCimMethodParameters.MethodName, 9
         )
@@ -1690,7 +1790,7 @@ Function Remove-ReservedUrl #Complete
 
     $removeUrlResult = Invoke-RsCimMethod @invokeRsCimMethodParameters
 
-    if ($reportServerUrlsResult.Error)
+    if ($removeUrlResult.Error)
     {
         $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
             $invokeRsCimMethodParameters.MethodName, 9
