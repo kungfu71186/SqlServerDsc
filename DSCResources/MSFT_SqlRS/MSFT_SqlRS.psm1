@@ -1296,93 +1296,49 @@ Function Invoke-ChangeServiceAccount
      2. Check if database is initialized
      3. If database is initialized - backup encryption keys
      4. Stop service
-     5. Invoke-SetServiceAccount
+     5. Set-RSServiceAccount
      6. Grant user rights
      7. Start service
      8. Update URLs
      9. Restore Encryption key if database was initialized and we have a backup
     #>
 
-    #region Check if RS service is running
-    $serviceName = $rsConfigurationCIMInstance.ServiceName
-    $serviceStatus = (Get-Service -Name $serviceName).Status
-    if ($serviceStatus -ne 'Running' -and $rsConfigurationCIMInstance.IsInitialized)
-    {
-        try
-        {
-            Start-Service $serviceName -ErrorAction Stop
-        }
-        catch
-        {
-            $errorMessage = ($script:localizedData.ServiceFailedNotImplemented -f $serviceStatus, $serviceName)
-            New-InvalidOperationException -Message $errorMessage
-        }
-    }
-    #endregion Check if RS service is running
-
-    #region Backup Encryption Key
     $backupEncryptionKey = $false
     if ($rsConfigurationCIMInstance.IsInitialized)
     {
+        Start-RSService -ReportServiceInstanceName $ReportServiceInstanceName
         # Need to backup key
         #TODO: add new parameter for password?
-        $backupKeyStatus = Invoke-BackupEncryptionKey
-
-        if($backupKeyStatus)
-        {
-            $backupEncryptionKey = $true
-        }
-        else
-        {
-            New-InvalidOperationException -Message ($script:localizedData.ChangeServiceAccountBackupKeyFailed)
-        }
+        $backupEncryptionKey = Invoke-BackupEncryptionKey
     }
-    #endregion Backup Encryption Key
 
-    #region Stop RS Service
-    # Stop the windows service
-    try
-    {
-        Stop-Service $serviceName -ErrorAction Stop
-    }
-    catch
-    {
-        New-InvalidOperationException -Message ($script:localizedData.ChangeServiceFailedToStopService)
-    }
-    #endregion Stop RS Service
+    Stop-RSService -ReportServiceInstanceName $ReportServiceInstanceName
 
-    #region Update the service account
-    # Will throw errors within the function if it fails
+    # Update the service account
     $setServiceAccountParameters = @{
         ReportServiceInstanceName = $ReportServiceInstanceName
         ServiceAccount            = $ServiceAccount
         ServiceAccountLogonType   = $ServiceAccountLogonType
     }
 
-    $newServiceAccount = Invoke-SetServiceAccount @setServiceAccountParameters
-    #endregion Update the service account
+    Set-RSServiceAccount @setServiceAccountParameters
 
     #region Update the user permissions on the database
-    # Refresh the CIM Configuration instance
-    $rsConfigurationCIMInstance = (
-        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
-    ).ConfigurationCIM
-
-    $rsDatabaseLogonTypeInt = $rsConfigurationCIMInstance.DatabaseLogonType
-    $rsDatabaseLogonTypeEnum = [Reportdatabaselogontype].GetEnumNames() | Where-Object -Filter{
-        [Reportdatabaselogontype]::$_.value__ -eq $rsDatabaseLogonType
-    }
-
-    if ($rsDatabaseLogonTypeEnum -eq [Reportdatabaselogontype]::Service -and
-            -not [String]::IsNullOrEmpty($rsConfigurationCIMInstance.DatabaseName))
+    $rsLogonType = Get-ReportDatabaseLogonTypeFromInt $rsConfigurationCIMInstance.DatabaseLogonType
+    if ($rsConfigurationCIMInstance.DatabaseName -and $rsLogonType -eq [Reportdatabaselogontype]::Service)
     {
+        # Refresh the CIM Configuration instance to get new service account
+        $rsConfigurationCIMInstance = (
+            Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
+        ).ConfigurationCIM
+
         <#
-         Database does exist and we are using the service account
-         as the reporting services database user, so we need to update
-         permissions. We are using a service account which is a windows
-         account and not a sql account, so IsWindowsUser is false, but then
-         IsRemote is automatically false as well. The cim method call will
-         return an error otherwise.
+        Database does exist and we are using the service account
+        as the reporting services database user, so we need to update
+        permissions. We are using a service account which is a windows
+        account and not a sql account, so IsWindowsUser is false, but then
+        IsRemote is automatically false as well. The cim method call will
+        return an error otherwise.
         #>
         $grantUserRightsParameters = @{
             UserName      = $rsConfigurationCIMInstance.WindowsServiceIdentityActual
@@ -1392,53 +1348,27 @@ Function Invoke-ChangeServiceAccount
         }
 
         $databasUserPermissionsScript = Get-GrantUserRightsScript @grantUserRightsParameters
-    }
 
-    #TODO: run sql script
+        #TODO: run sql script
+    }
     #endregion Update the user permissions on the database
 
-    #region Start the Reporting services service
-    try
-    {
-        Start-Service $serviceName -ErrorAction Stop
-    }
-    catch
-    {
-        New-InvalidOperationException -Message (
-            $script:localizedData.ChangeServiceFailedToStartService -f $newServiceAccount
-        )
-    }
-    #endregion Start the Reporting services service
-
-    #region Update Reserved Urls
+    Start-RSService -ReportServiceInstanceName $ReportServiceInstanceName
     Invoke-UpdateUrls -ReportServiceInstance $ReportServiceInstanceName
-    #endregion Update Reserved Urls
 
-    #region Restore encryption keys
     if ($backupEncryptionKey){
         #TODO: Invoke-RestoreEncryptionKeys
         # restore keys
         # Need file name and password, should be same parameters an encrypt
-        $restoreKeyStatus = Invoke-RestoreEncryptionKey
-
-        if($backupKeyStatus)
-        {
-            $backupEncryptionKey = $true
-        }
-        else
-        {
-            New-InvalidOperationException -Message (
-                $script:localizedData.ChangeServiceAccountRestoreKeyFailed -f $newServiceAccount
-            )
-        }
+        Invoke-RestoreEncryptionKey
     }
-    #endregion Restore encryption keys
+
 }
 
-Function Invoke-SetServiceAccount #Complete
+Function Set-RSServiceAccount #Complete
 {
     [CmdletBinding()]
-    [OutputType([System.String])]
+    [OutputType([Void])]
     param
     (
         [Parameter(Mandatory = $true)]
@@ -1460,17 +1390,13 @@ Function Invoke-SetServiceAccount #Complete
         Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
     ).ConfigurationCIM
 
+    if ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows)
+    {
+        if (-not $ServiceAccount)
+        {
+            New-InvalidOperationException -Message ($script:localizedData.WindowsAccountNoCred)
+        }
 
-    if ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows -and -not $ServiceAccount)
-    {
-        <#
-         The service account type is windows, but we don't have
-         a credential.
-        #>
-        New-InvalidOperationException -Message ($script:localizedData.WindowsAccountNoCred)
-    }
-    elseif ($ServiceAccountLogonType -eq [ReportServiceAccount]::Windows)
-    {
         $useBuiltinServiceAccount    = $false
         $userName                    = $ServiceAccount.GetNetworkCredential().Username
         $userDomain                  = $ServiceAccount.GetNetworkCredential().Domain
@@ -1500,7 +1426,9 @@ Function Invoke-SetServiceAccount #Complete
         $serviceAccountPasswordToSet = ''
     }
 
-    Write-Verbose -Message ($script:localizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $ServiceAccountLogonType)
+    Write-Verbose -Message (
+        $script:localizedData.AttemptingToSetServiceAccount -f $serviceAccountToSet, $ServiceAccountLogonType
+    )
 
     $invokeRsCimMethodParameters = @{
         CimInstance = $rsConfigurationCIMInstance
@@ -1521,11 +1449,8 @@ Function Invoke-SetServiceAccount #Complete
         )
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
     }
-    else
-    {
-        Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
-        return $serviceAccountToSet
-    }
+
+    Write-Verbose -Message ($script:localizedData.SetServiceAccountSuccessful)
 }
 
 Function Get-GrantUserRightsScript #Complete
@@ -1585,11 +1510,8 @@ Function Get-GrantUserRightsScript #Complete
         )
         New-InvalidResultException -Message $errorMessage -ErrorRecord ($invokeRsCimMethodResult.Result)
     }
-    else
-    {
-        Write-Verbose -Message ($script:localizedData.GenerateUserRightScriptSuccessful)
-    }
 
+    Write-Verbose -Message ($script:localizedData.GenerateUserRightScriptSuccessful)
     return $invokeRsCimMethodResult.Result.Script
 }
 
@@ -1729,13 +1651,13 @@ Function Add-ReservedUrl #Complete
 
     if ($addUrlResult.HRESULT -eq 0x8004023C) # -2147220932
     {
+        # The url already exist, so we will remove and then re-add it
         Write-Verbose -Message ($script:localizedData.ReservedUrlAlreadyExists -f $Url)
         Remove-ReservedUrl @PSBoundParameters
         Add-ReservedUrl @PSBoundParameters
     }
     elseif ($addUrlResult.Error)
     {
-
         $errorMessage = $script:localizedData.IssueCallingCIMMethod -f (
             $invokeRsCimMethodParameters.MethodName, 9
         )
@@ -1876,6 +1798,85 @@ Function Get-ReservedUrls #Complete
         }
     }
 }
+
+Function Start-RSService
+{
+    [CmdletBinding()]
+    [OutputType([System.Collections.Hashtable])]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName
+    )
+
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
+    ).ConfigurationCIM
+
+    $rsServiceName = $rsConfigurationCIMInstance.ServiceName
+    $rsServiceStatus = (Get-Service $reportingServicesServiceName)
+    try
+    {
+        Start-Service $rsServiceName -ErrorAction Stop
+        Write-Verbose -Message ($script:localizedData.StartRSServiceSuccess -f $rsServiceName)
+    }
+    catch
+    {
+        $errorMessage = (
+            $script:localizedData.StartRSServiceFailed -f $rsServiceStatus, $rsServiceName
+        )
+        New-InvalidOperationException -Message $errorMessage
+    }
+}
+
+Function Stop-RSService
+{
+    [CmdletBinding()]
+    [OutputType([System.Collections.Hashtable])]
+    param
+    (
+        [Parameter(Mandatory)]
+        [ReportServiceInstance]
+        $ReportServiceInstanceName
+    )
+
+    $rsConfigurationCIMInstance = (
+        Get-ReportingServicesCIM -ReportServiceInstanceName $ReportServiceInstanceName -Verbose:$false
+    ).ConfigurationCIM
+
+    $rsServiceName = $rsConfigurationCIMInstance.ServiceName
+    $rsServiceStatus = (Get-Service $reportingServicesServiceName)
+    try
+    {
+        Stop-Service $rsServiceName -ErrorAction Stop
+        Write-Verbose -Message ($script:localizedData.StopRSServiceSuccess -f $rsServiceName)
+    }
+    catch
+    {
+        $errorMessage = (
+            $script:localizedData.StopRSServiceFailed -f $rsServiceStatus, $rsServiceName
+        )
+        New-InvalidOperationException -Message $errorMessage
+    }
+}
+
+Function Get-ReportDatabaseLogonTypeFromInt
+{
+    [CmdletBinding()]
+    [OutputType([System.Collections.Hashtable])]
+    param
+    (
+        [Parameter(Mandatory)]
+        [System.Int32]
+        $LogonTypeInt
+    )
+
+    return [ReportDatabaseLogonType].GetEnumNames() | Where-Object -Filter{
+        [ReportDatabaseLogonType]::$_.value__ -eq $LogonTypeInt
+    }
+}
+
 
 
 <#

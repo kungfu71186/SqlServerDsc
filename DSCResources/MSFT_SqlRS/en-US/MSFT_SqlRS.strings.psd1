@@ -61,11 +61,6 @@ ConvertFrom-StringData -StringData @'
 
     # Invoke-ChangeServiceAccount (9200)
     InvokeChangeServiceAccount           = Attempting to change the service account. (SRS9200)
-    ServiceFailedNotImplemented          = The Report Services service is currently '{0}'. The service needs to be running in order to change the service account. Please ensure the service '{1}' is currently running. (SRS9201)
-    ChangeServiceAccountBackupKeyFailed  = Failed to backup the encryption keys while changing the service account. The service account will not be changed. (SRS9202)
-    ChangeServiceAccountRestoreKeyFailed = Failed to restore the encryption keys while changing the service account to '{0}'. (SRS9203)
-    ChangeServiceFailedToStopService     = Failed to stop the Reporting Services service while changing the service account. The service account will not be changed. (SRS9204)
-    ChangeServiceFailedToStartService    = Failed to start the Report Services service with the new service account '{0}'. (SRS9205)
 
     # Invoke-UpdateUrls (9250)
     AttemptingToUpdateUrls    = Attempting to update the reserved Urls. (SRS9250)
@@ -92,6 +87,14 @@ ConvertFrom-StringData -StringData @'
     ReservedUrlsDontMatch         = The reserved Urls for the Web Service Manager and the Web Portal do not match. The service and web portal will start up properly, but the portal will report an error. (SRS9401)
     RetrievingReservedUrls        = Attempting to get the Reporting Service Modifiable Url list. (SRS9402)
     RetrievingReservedUrlsSuccess = Successfully retrieved the Reporting Service Modifiable Url list. (SRS9403)
+
+    # Start-RSService (9450)
+    StartRSServiceFailed  = The Report Services service is currently '{0}'. There was an error when attempting to start service. Please ensure the service '{1}' is currently running. (SRS9451)
+    StartRSServiceSuccess = The Report Services service '{0}' successfully started. (SRS9452)
+
+    # Start-RSService (9460)
+    StopRSServiceFailed  = The Report Services service is currently '{0}'. There was an error when attempting to start service. Please ensure the service '{1}' is currently running. (SRS9461)
+    StopRSServiceSuccess = The Report Services service '{0}' successfully stopped. (SRS9462)
 
     # MSFT_ReportServiceSkuUtils (SRS0600)
     RSSkuTypeNotInitialized       = It appears that the Reporting Services sku type hasn't been defined yet or not found. This should be set to one of the following types: {0}. (SRS0600)
